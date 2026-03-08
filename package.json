@@ -1,0 +1,46 @@
+{
+  "name": "sentinelx",
+  "version": "1.0.0",
+  "description": "Live OSINT X account monitor",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "cross-env ELECTRON_RUN_AS_NODE= electron-vite preview",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/react": "^18.x",
+    "@types/react-dom": "^18.x",
+    "@vitejs/plugin-react": "^4.x",
+    "autoprefixer": "^10.x",
+    "cross-env": "^7.0.3",
+    "electron": "^30.5.1",
+    "electron-builder": "^24.x",
+    "electron-vite": "^2.x",
+    "postcss": "^8.x",
+    "tailwindcss": "^3.x",
+    "typescript": "^5.x"
+  },
+  "dependencies": {
+    "@the-convocation/twitter-scraper": "latest",
+    "electron-store": "^8.x",
+    "react": "^18.x",
+    "react-dom": "^18.x"
+  },
+  "build": {
+    "appId": "com.sentinelx.app",
+    "productName": "SentinelX",
+    "win": {
+      "target": "nsis"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
