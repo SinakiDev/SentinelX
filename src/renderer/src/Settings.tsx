@@ -169,7 +169,7 @@ export default function Settings({ settings, onUpdate }: Props) {
             type="range"
             min={0.1}
             max={1}
-            step={0.05}
+            step={0.01}
             value={opacity}
             onChange={(e) => handleOpacity(Number(e.target.value))}
             className="flex-1"

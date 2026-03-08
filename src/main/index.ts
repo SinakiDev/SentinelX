@@ -4,8 +4,6 @@ import Store from 'electron-store'
 import { getRecentTweets } from './db'
 import { initScraperWithCookies, startPolling, stopPolling, updateAccounts, clearScraper } from './poller'
 
-// ── Store schema ──────────────────────────────────────────────────────────────
-
 interface StoreSchema {
   accounts: string[]
   keywords: string[]
@@ -16,8 +14,6 @@ interface StoreSchema {
   windowBounds: { x: number; y: number; width: number; height: number }
   cookieBlob: string | null   // OS-encrypted JSON array of session cookies
 }
-
-// ── Validation helpers ────────────────────────────────────────────────────────
 
 const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/
 
@@ -40,8 +36,6 @@ function isStringArray(val: unknown): val is string[] {
   return Array.isArray(val) && val.every((v) => typeof v === 'string')
 }
 
-// ── Lazy store ────────────────────────────────────────────────────────────────
-
 let store: Store<StoreSchema>
 
 function getStore(): Store<StoreSchema> {
@@ -61,8 +55,6 @@ function getStore(): Store<StoreSchema> {
   }
   return store
 }
-
-// ── Cookie encryption via OS safeStorage ──────────────────────────────────────
 
 function saveCookies(cookieStrings: string[]): void {
   if (!safeStorage.isEncryptionAvailable()) return
@@ -86,8 +78,6 @@ function loadCookies(): string[] | null {
 function clearCookies(): void {
   getStore().set('cookieBlob', null)
 }
-
-// ── X Login popup ─────────────────────────────────────────────────────────────
 
 const X_DOMAINS = ['https://x.com', 'https://twitter.com', 'https://www.x.com']
 const X_HOME_RE = /^https:\/\/(www\.)?(x\.com|twitter\.com)\/?(?:home)?$/
@@ -113,17 +103,14 @@ async function openXLoginWindow(): Promise<string[] | null> {
 
     async function checkLogin(url: string) {
       if (resolved) return
-      // Detect successful login: redirected to home feed
       if (X_HOME_RE.test(url) || url.includes('/home')) {
         resolved = true
         try {
-          // Collect cookies from all X domains
           const all: Electron.Cookie[] = []
           for (const domain of X_DOMAINS) {
             const cookies = await loginWin.webContents.session.cookies.get({ url: domain })
             all.push(...cookies)
           }
-          // Format as "name=value" strings (scraper parses these)
           const cookieStrings = all.map((c) => `${c.name}=${c.value}`)
           loginWin.close()
           resolve(cookieStrings.length > 0 ? cookieStrings : null)
@@ -139,8 +126,6 @@ async function openXLoginWindow(): Promise<string[] | null> {
     loginWin.on('closed', () => { if (!resolved) resolve(null) })
   })
 }
-
-// ── Main window ───────────────────────────────────────────────────────────────
 
 let win: BrowserWindow | null = null
 
@@ -164,12 +149,11 @@ function createWindow(): void {
     }
   })
 
-  win.setOpacity(s.get('opacity'))
+  win.setOpacity(Math.cbrt(s.get('opacity')))
 
   win.on('close', () => {
     if (win) {
       s.set('windowBounds', win.getBounds())
-      s.set('opacity', win.getOpacity())
       s.set('alwaysOnTop', win.isAlwaysOnTop())
     }
   })
@@ -191,8 +175,6 @@ function createWindow(): void {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
-
-// ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
   const s = getStore()
@@ -237,8 +219,6 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
-// ── IPC Handlers ──────────────────────────────────────────────────────────────
-
 ipcMain.handle('settings:get', () => {
   const s = getStore()
   return {
@@ -255,7 +235,7 @@ ipcMain.handle('settings:setOpacity', (_, val: unknown) => {
   const v = clamp(val, 0.1, 1)
   if (v === null) return
   getStore().set('opacity', v)
-  win?.setOpacity(v)
+  win?.setOpacity(Math.cbrt(v))
 })
 
 ipcMain.handle('settings:setAlwaysOnTop', (_, val: unknown) => {

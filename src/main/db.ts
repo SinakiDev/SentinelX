@@ -27,7 +27,6 @@ function getStore(): Store<TweetStore> {
 
 const MAX_TWEETS = 300
 
-/** Returns true if the tweet was new (not a duplicate). */
 export function insertTweet(tweet: TweetRow): boolean {
   const store = getStore()
   const tweets = store.get('tweets')

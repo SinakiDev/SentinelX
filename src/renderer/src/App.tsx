@@ -10,9 +10,7 @@ export default function App() {
   const [pinned, setPinned] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Keep a ref so callbacks always see latest items without stale closure
   const itemsRef = useRef<FeedItem[]>([])
-  // Tick every 30s to re-apply age filter
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -22,7 +20,6 @@ export default function App() {
     })
 
     const removeFeed = window.api.onFeedItem((item) => {
-      // Avoid duplicates
       if (itemsRef.current.some((i) => i.id === item.id)) return
       itemsRef.current = [...itemsRef.current, item].slice(-300)
       setItems([...itemsRef.current])
@@ -42,7 +39,6 @@ export default function App() {
     }
   }, [])
 
-  // Newest-first, filtered by maxAge
   const visibleItems = useMemo(() => {
     const maxAge = settings?.maxAgeMinutes ?? null
     const cutoff = maxAge ? Date.now() / 1000 - maxAge * 60 : null
@@ -63,7 +59,10 @@ export default function App() {
   }
 
   return (
-    <div className="app-root flex flex-col h-screen select-none" style={{ borderRadius: 10, overflow: 'hidden' }}>
+    <div
+      className="app-root flex flex-col h-screen select-none"
+      style={{ borderRadius: 10, overflow: 'hidden', '--panel-alpha': settings ? 0.88 + ((settings.opacity - 0.1) / 0.9) * 0.12 : 1 } as React.CSSProperties}
+    >
       {/* Title bar */}
       <div
         className="titlebar flex items-center justify-between px-3 py-1.5 flex-shrink-0"
@@ -110,7 +109,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Main content */}
       <div className="flex flex-col flex-1 min-h-0">
         {showSettings && settings ? (
           <Settings settings={settings} onUpdate={handleSettingsUpdate} />

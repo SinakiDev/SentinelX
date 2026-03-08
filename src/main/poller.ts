@@ -13,7 +13,6 @@ export interface PollConfig {
 
 let config: PollConfig | null = null
 
-/** Initialise the scraper using cookies captured from the X login window. */
 export async function initScraperWithCookies(
   cookieStrings: string[],
   onError: (msg: string) => void
@@ -49,7 +48,6 @@ export function stopPolling(): void {
   }
 }
 
-/** Clears the scraper and config from memory (call on logout/quit). */
 export function clearScraper(): void {
   scraper = null
   config = null

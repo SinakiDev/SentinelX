@@ -3,9 +3,9 @@ import { FeedItem as FeedItemType } from './types'
 import FeedItemComponent from './FeedItem'
 
 interface Props {
-  items: FeedItemType[]  // sorted newest-first
+  items: FeedItemType[]
   keywords: string[]
-  scrollSpeed: number    // px per second
+  scrollSpeed: number
 }
 
 export default function Feed({ items, keywords, scrollSpeed }: Props) {
@@ -13,7 +13,6 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
   const innerRef = useRef<HTMLDivElement>(null)
   const [paused, setPaused] = useState(false)
 
-  // Mutable refs so the single rAF loop always reads current values
   const pausedRef = useRef(false)
   const speedRef = useRef(scrollSpeed)
   const posRef = useRef(0)
@@ -22,7 +21,6 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
   useEffect(() => { pausedRef.current = paused }, [paused])
   useEffect(() => { speedRef.current = scrollSpeed }, [scrollSpeed])
 
-  // Single persistent rAF loop — started once on mount, never restarted
   useEffect(() => {
     const container = containerRef.current
     const inner = innerRef.current
@@ -36,12 +34,9 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
       last = ts
 
       if (!pausedRef.current) {
-        // Half height = one full copy of the list (we render it twice)
         const half = inner.scrollHeight / 2
         if (half > container.clientHeight) {
           posRef.current += speedRef.current * delta
-          // Seamless reset: when we've scrolled past copy 1, silently snap back —
-          // copy 2 starts identically so the viewer sees no jump
           if (posRef.current >= half) posRef.current -= half
           inner.style.transform = `translateY(-${posRef.current}px)`
         }
@@ -52,9 +47,8 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
 
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-  }, [])  // run once — live values come from refs
+  }, [])
 
-  // New item: jump to top so newest is visible immediately
   useEffect(() => {
     if (items.length > prevLengthRef.current && !pausedRef.current) {
       posRef.current = 0

@@ -18,7 +18,7 @@ html, body, #root {
 
 /* ── App root ── */
 .app-root {
-  background: rgba(10, 12, 18, 0.92);
+  background: rgba(10, 12, 18, var(--panel-alpha, 0.92));
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 10px;
   backdrop-filter: blur(12px);
