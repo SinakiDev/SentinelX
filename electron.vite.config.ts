@@ -7,7 +7,7 @@ delete process.env['ELECTRON_RUN_AS_NODE']
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin({ exclude: ['@the-convocation/twitter-scraper'] })]
   },
   preload: {
     plugins: [externalizeDepsPlugin()]
