@@ -45,6 +45,7 @@ declare global {
       onFeedError: (cb: (msg: string) => void) => () => void
       onInitSettings: (cb: (s: Settings) => void) => void
       onLoginStatus: (cb: (status: string) => void) => () => void
+      onRateLimit: (cb: (until: number) => void) => () => void
     }
   }
 }

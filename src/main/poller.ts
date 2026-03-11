@@ -9,6 +9,7 @@ export interface PollConfig {
   intervalMs: number
   onNewTweet: (tweet: TweetRow) => void
   onError: (msg: string) => void
+  onRateLimit?: (until: number) => void
 }
 
 let config: PollConfig | null = null
@@ -22,6 +23,11 @@ function isRateLimited(): boolean {
 
 function setRateLimit(): void {
   rateLimitUntil = Date.now() + RATE_LIMIT_BACKOFF_MS
+  if (config?.onRateLimit) config.onRateLimit(rateLimitUntil)
+}
+
+export function restoreRateLimit(until: number): void {
+  if (until > Date.now()) rateLimitUntil = until
 }
 
 export async function initScraperWithCookies(

@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status)
     ipcRenderer.on('auth:loginStatus', handler)
     return () => ipcRenderer.removeListener('auth:loginStatus', handler)
+  },
+  onRateLimit: (cb: (until: number) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, until: number) => cb(until)
+    ipcRenderer.on('feed:rateLimit', handler)
+    return () => ipcRenderer.removeListener('feed:rateLimit', handler)
   }
 })
 

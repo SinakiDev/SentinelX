@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, safeStorage, shell, screen } from 'electro
 import { join } from 'path'
 import Store from 'electron-store'
 import { getRecentTweets } from './db'
-import { initScraperWithCookies, startPolling, stopPolling, updateAccounts, clearScraper } from './poller'
+import { initScraperWithCookies, startPolling, stopPolling, updateAccounts, clearScraper, restoreRateLimit } from './poller'
 
 interface StoreSchema {
   accounts: string[]
@@ -13,6 +13,7 @@ interface StoreSchema {
   maxAgeMinutes: number | null   // null = show all; otherwise filter by age
   windowBounds: { x: number; y: number; width: number; height: number }
   cookieBlob: string | null   // OS-encrypted JSON array of session cookies
+  rateLimitUntil: number      // unix ms timestamp; 0 = not rate limited
 }
 
 const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/
@@ -49,7 +50,8 @@ function getStore(): Store<StoreSchema> {
         alwaysOnTop: false,
         maxAgeMinutes: 120,
         windowBounds: { x: 100, y: 100, width: 420, height: 700 },
-        cookieBlob: null
+        cookieBlob: null,
+        rateLimitUntil: 0
       }
     })
   }
@@ -208,6 +210,13 @@ app.whenReady().then(async () => {
     const cached = getRecentTweets(50).reverse()
     for (const t of cached) win?.webContents.send('feed:item', t)
 
+    // Restore rate limit if still active from a previous run
+    const storedRl = s.get('rateLimitUntil')
+    if (storedRl > Date.now()) {
+      restoreRateLimit(storedRl)
+      win?.webContents.send('feed:rateLimit', storedRl)
+    }
+
     const cookies = loadCookies()
     if (cookies && s.get('accounts').length > 0) {
       const ok = await initScraperWithCookies(cookies, (msg) => win?.webContents.send('feed:error', msg))
@@ -216,7 +225,8 @@ app.whenReady().then(async () => {
           accounts: s.get('accounts'),
           intervalMs: 90_000,
           onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
-          onError: (msg) => win?.webContents.send('feed:error', msg)
+          onError: (msg) => win?.webContents.send('feed:error', msg),
+          onRateLimit: (until) => { s.set('rateLimitUntil', until); win?.webContents.send('feed:rateLimit', until) }
         })
       } else {
         // Cookies are expired — clear them and tell the renderer so UI shows the login button
@@ -328,7 +338,8 @@ ipcMain.handle('auth:openLoginWindow', async () => {
       accounts: s.get('accounts'),
       intervalMs: 90_000,
       onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
-      onError: (msg) => win?.webContents.send('feed:error', msg)
+      onError: (msg) => win?.webContents.send('feed:error', msg),
+      onRateLimit: (until) => { s.set('rateLimitUntil', until); win?.webContents.send('feed:rateLimit', until) }
     })
     win?.webContents.send('auth:loginStatus', 'connected')
     return { success: true }
