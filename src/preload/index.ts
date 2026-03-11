@@ -22,10 +22,6 @@ contextBridge.exposeInMainWorld('api', {
   close: () => ipcRenderer.invoke('window:close'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
-  // Search
-  searchTweets: (query: string): Promise<{ results: FeedItem[], error?: string }> =>
-    ipcRenderer.invoke('search:query', query),
-
   // Events
   onFeedItem: (cb: (item: FeedItem) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, item: FeedItem) => cb(item)

@@ -1,9 +1,8 @@
-import { Scraper, SearchMode, Tweet } from '@the-convocation/twitter-scraper'
+import { Scraper, Tweet } from '@the-convocation/twitter-scraper'
 import { insertTweet, TweetRow } from './db'
 
 let scraper: Scraper | null = null
-let pollTimer: NodeJS.Timeout | null = null
-let polling = false
+const accountTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 export interface PollConfig {
   accounts: string[]
@@ -35,31 +34,6 @@ export async function initScraperWithCookies(
   }
 }
 
-export async function startPolling(cfg: PollConfig): Promise<void> {
-  config = cfg
-  if (pollTimer) clearInterval(pollTimer)
-  polling = false
-  await pollAccounts()
-  pollTimer = setInterval(pollAccounts, cfg.intervalMs)
-}
-
-export function stopPolling(): void {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-  polling = false
-}
-
-export function clearScraper(): void {
-  scraper = null
-  config = null
-}
-
-export function updateAccounts(accounts: string[]): void {
-  if (config) config.accounts = accounts
-}
-
 function tweetToRow(tweet: Tweet, handle: string): TweetRow {
   return {
     id: tweet.id!,
@@ -84,7 +58,7 @@ async function fetchAccountTweets(handle: string, timeoutMs: number): Promise<Tw
   const rows: TweetRow[] = []
 
   const fetchPromise = (async () => {
-    const tweets = scraper!.getTweets(handle, 5)
+    const tweets = scraper!.getTweets(handle, 3)
     for await (const tweet of tweets) {
       if (!tweet.id || !tweet.text) continue
       rows.push(tweetToRow(tweet, handle))
@@ -93,53 +67,77 @@ async function fetchAccountTweets(handle: string, timeoutMs: number): Promise<Tw
   })()
 
   const timeoutPromise = new Promise<TweetRow[]>((_, reject) =>
-    setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+    setTimeout(() => reject(new Error(`Timed out`)), timeoutMs)
   )
 
   return Promise.race([fetchPromise, timeoutPromise])
 }
 
-export async function searchWithScraper(query: string, maxResults: number, timeoutMs: number): Promise<TweetRow[]> {
-  if (!scraper) throw new Error('Not logged in')
-  const rows: TweetRow[] = []
-
-  const fetchPromise = (async () => {
-    const tweets = scraper!.searchTweets(query, maxResults, SearchMode.Latest)
-    for await (const tweet of tweets) {
-      if (!tweet.id || !tweet.text) continue
-      const handle = tweet.username ?? 'unknown'
-      rows.push(tweetToRow(tweet, handle))
-    }
-    return rows
-  })()
-
-  const timeoutPromise = new Promise<TweetRow[]>((_, reject) =>
-    setTimeout(() => reject(new Error('Search timed out')), timeoutMs)
-  )
-
-  return Promise.race([fetchPromise, timeoutPromise])
-}
-
-async function pollAccounts(): Promise<void> {
-  if (!config || !scraper) return
-  if (polling) return
-  polling = true
-
+async function pollOneAccount(handle: string): Promise<void> {
+  if (!scraper || !config) return
   try {
-    for (const handle of config.accounts) {
-      if (!scraper || !config) break
-      try {
-        const rows = await fetchAccountTweets(handle, 20_000)
-        for (const row of rows) {
-          const isNew = insertTweet(row)
-          if (isNew && config) config.onNewTweet(row)
-        }
-      } catch (e: unknown) {
-        if (config) config.onError(`@${handle}: ${e instanceof Error ? e.message : String(e)}`)
-      }
-      await new Promise((r) => setTimeout(r, 2000))
+    const rows = await fetchAccountTweets(handle, 20_000)
+    for (const row of rows) {
+      const isNew = insertTweet(row)
+      if (isNew && config) config.onNewTweet(row)
     }
-  } finally {
-    polling = false
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (msg === 'Timed out') return // transient — will retry next cycle, no need to surface
+    if (config) config.onError(`@${handle}: ${msg}`)
   }
+}
+
+function scheduleAccount(handle: string, delay: number): void {
+  clearTimeout(accountTimers.get(handle))
+  const timer = setTimeout(async () => {
+    await pollOneAccount(handle)
+    if (accountTimers.has(handle) && config) {
+      scheduleAccount(handle, config.intervalMs)
+    }
+  }, delay)
+  accountTimers.set(handle, timer)
+}
+
+export async function startPolling(cfg: PollConfig): Promise<void> {
+  config = cfg
+  stopPolling()
+  cfg.accounts.forEach((handle, i) => {
+    scheduleAccount(handle, i * 3_000)
+  })
+}
+
+export function stopPolling(): void {
+  for (const timer of accountTimers.values()) clearTimeout(timer)
+  accountTimers.clear()
+}
+
+export function clearScraper(): void {
+  scraper = null
+  config = null
+}
+
+export function updateAccounts(accounts: string[]): void {
+  if (!config) return
+  const current = new Set(accountTimers.keys())
+  const next = new Set(accounts)
+
+  // Remove dropped accounts
+  for (const h of current) {
+    if (!next.has(h)) {
+      clearTimeout(accountTimers.get(h))
+      accountTimers.delete(h)
+    }
+  }
+
+  // Schedule new accounts, staggered 3s apart starting after 1s
+  let delay = 1_000
+  for (const h of next) {
+    if (!current.has(h)) {
+      scheduleAccount(h, delay)
+      delay += 3_000
+    }
+  }
+
+  config.accounts = accounts
 }

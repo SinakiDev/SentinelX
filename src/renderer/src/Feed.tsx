@@ -16,9 +16,22 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
   const pausedRef = useRef(false)
   const speedRef = useRef(scrollSpeed)
   const posRef = useRef(0)
+  const prevHalfRef = useRef(0)
 
   useEffect(() => { pausedRef.current = paused }, [paused])
   useEffect(() => { speedRef.current = scrollSpeed }, [scrollSpeed])
+
+  // When new items are prepended (newest-first sort), compensate posRef so the
+  // visible content doesn't jump — add the extra height the new items introduced.
+  useEffect(() => {
+    const inner = innerRef.current
+    if (!inner) return
+    const newHalf = inner.scrollHeight / 2
+    if (prevHalfRef.current > 0 && newHalf > prevHalfRef.current) {
+      posRef.current += newHalf - prevHalfRef.current
+    }
+    prevHalfRef.current = newHalf
+  }, [items])
 
   useEffect(() => {
     const container = containerRef.current

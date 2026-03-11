@@ -41,7 +41,6 @@ declare global {
       minimize: () => Promise<void>
       close: () => Promise<void>
       openExternal: (url: string) => Promise<void>
-      searchTweets: (query: string) => Promise<{ results: FeedItem[], error?: string }>
       onFeedItem: (cb: (item: FeedItem) => void) => () => void
       onFeedError: (cb: (msg: string) => void) => () => void
       onInitSettings: (cb: (s: Settings) => void) => void

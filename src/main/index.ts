@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, safeStorage, shell, screen } from 'electro
 import { join } from 'path'
 import Store from 'electron-store'
 import { getRecentTweets } from './db'
-import { initScraperWithCookies, startPolling, stopPolling, updateAccounts, clearScraper, searchWithScraper } from './poller'
+import { initScraperWithCookies, startPolling, stopPolling, updateAccounts, clearScraper } from './poller'
 
 interface StoreSchema {
   accounts: string[]
@@ -350,14 +350,4 @@ ipcMain.handle('window:close', () => win?.close())
 
 ipcMain.handle('shell:openExternal', (_e, url: unknown) => {
   if (typeof url === 'string' && isSafeUrl(url)) shell.openExternal(url)
-})
-
-ipcMain.handle('search:query', async (_e, query: unknown) => {
-  if (typeof query !== 'string' || !query.trim()) return { error: 'Empty query', results: [] }
-  try {
-    const results = await searchWithScraper(query.trim(), 20, 25_000)
-    return { results }
-  } catch (e: unknown) {
-    return { error: e instanceof Error ? e.message : String(e), results: [] }
-  }
 })

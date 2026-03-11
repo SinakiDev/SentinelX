@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import Feed from './Feed'
 import Settings from './Settings'
-import SearchBar from './SearchBar'
 import { FeedItem, Settings as SettingsType } from './types'
 
 export default function App() {
@@ -10,9 +9,6 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [searchMode, setSearchMode] = useState(false)
-  const [searchResults, setSearchResults] = useState<FeedItem[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
 
   const itemsRef = useRef<FeedItem[]>([])
   const [tick, setTick] = useState(0)
@@ -70,22 +66,6 @@ export default function App() {
     setSettings((prev) => (prev ? { ...prev, ...updated } : prev))
   }
 
-  function handleSearchResults(query: string, results: FeedItem[]) {
-    setSearchQuery(query)
-    setSearchResults(results.sort((a, b) => b.timestamp - a.timestamp))
-  }
-
-  function closeSearch() {
-    setSearchMode(false)
-    setSearchResults([])
-    setSearchQuery('')
-  }
-
-  function openSearch() {
-    setShowSettings(false)
-    setSearchMode(true)
-  }
-
   return (
     <div
       className="app-root flex flex-col h-screen select-none"
@@ -115,14 +95,7 @@ export default function App() {
             <span>{pinned ? 'PINNED' : 'PIN'}</span>
           </button>
           <button
-            onClick={openSearch}
-            className={`icon-btn ${searchMode ? 'text-blue-400' : 'text-gray-400'}`}
-            title="Search tweets"
-          >
-            🔍
-          </button>
-          <button
-            onClick={() => { setSearchMode(false); setShowSettings((v) => !v) }}
+            onClick={() => setShowSettings((v) => !v)}
             className={`icon-btn ${showSettings ? 'text-blue-400' : 'text-gray-400'}`}
             title="Settings"
           >
@@ -144,27 +117,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Search bar */}
-      {searchMode && (
-        <SearchBar onResults={handleSearchResults} onClose={closeSearch} />
-      )}
-
-      {/* Search query banner */}
-      {searchMode && searchQuery && (
-        <div className="search-banner flex-shrink-0">
-          "{searchQuery}" — {searchResults.length} results
-        </div>
-      )}
-
       <div className="flex flex-col flex-1 min-h-0">
         {showSettings && settings ? (
           <Settings settings={settings} onUpdate={handleSettingsUpdate} />
-        ) : searchMode ? (
-          <Feed
-            items={searchResults}
-            keywords={settings?.keywords ?? []}
-            scrollSpeed={settings?.scrollSpeed ?? 30}
-          />
         ) : (
           <Feed
             items={visibleItems}
