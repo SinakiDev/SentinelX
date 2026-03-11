@@ -30,11 +30,21 @@ export default function App() {
       setTimeout(() => setError(null), 6000)
     })
 
+    // When the main process detects an expired/invalid session on startup,
+    // clear hasCredentials and open Settings so the user sees the login button
+    const removeLoginStatus = window.api.onLoginStatus((status) => {
+      if (status === 'session-expired') {
+        setSettings((prev) => prev ? { ...prev, hasCredentials: false } : prev)
+        setShowSettings(true)
+      }
+    })
+
     const tickInterval = setInterval(() => setTick((t) => t + 1), 30_000)
 
     return () => {
       removeFeed()
       removeErr()
+      removeLoginStatus()
       clearInterval(tickInterval)
     }
   }, [])

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Settings as SettingsType } from './types'
 
 interface Props {
@@ -16,6 +16,9 @@ export default function Settings({ settings, onUpdate }: Props) {
   const [loginStatus, setLoginStatus] = useState<string | null>(null)
   const [loginBusy, setLoginBusy] = useState(false)
   const [hasCredentials, setHasCredentials] = useState(settings.hasCredentials)
+
+  // Keep in sync if parent detects session expiry while Settings is already open
+  useEffect(() => { setHasCredentials(settings.hasCredentials) }, [settings.hasCredentials])
 
   async function addAccount() {
     const handle = newHandle.trim()

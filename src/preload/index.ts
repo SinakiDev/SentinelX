@@ -23,19 +23,22 @@ contextBridge.exposeInMainWorld('api', {
 
   // Events
   onFeedItem: (cb: (item: FeedItem) => void) => {
-    ipcRenderer.on('feed:item', (_e, item) => cb(item))
-    return () => ipcRenderer.removeAllListeners('feed:item')
+    const handler = (_e: Electron.IpcRendererEvent, item: FeedItem) => cb(item)
+    ipcRenderer.on('feed:item', handler)
+    return () => ipcRenderer.removeListener('feed:item', handler)
   },
   onFeedError: (cb: (msg: string) => void) => {
-    ipcRenderer.on('feed:error', (_e, msg) => cb(msg))
-    return () => ipcRenderer.removeAllListeners('feed:error')
+    const handler = (_e: Electron.IpcRendererEvent, msg: string) => cb(msg)
+    ipcRenderer.on('feed:error', handler)
+    return () => ipcRenderer.removeListener('feed:error', handler)
   },
   onInitSettings: (cb: (s: InitSettings) => void) => {
     ipcRenderer.once('init:settings', (_e, s) => cb(s))
   },
   onLoginStatus: (cb: (status: string) => void) => {
-    ipcRenderer.on('auth:loginStatus', (_e, status) => cb(status))
-    return () => ipcRenderer.removeAllListeners('auth:loginStatus')
+    const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status)
+    ipcRenderer.on('auth:loginStatus', handler)
+    return () => ipcRenderer.removeListener('auth:loginStatus', handler)
   }
 })
 

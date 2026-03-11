@@ -89,6 +89,7 @@ async function openXLoginWindow(): Promise<string[] | null> {
       height: 740,
       title: 'Log in to X',
       webPreferences: {
+        partition: 'login-temp', // non-persistent in-memory session — fresh every time, no cached cookies
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
@@ -217,6 +218,10 @@ app.whenReady().then(async () => {
           onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
           onError: (msg) => win?.webContents.send('feed:error', msg)
         })
+      } else {
+        // Cookies are expired — clear them and tell the renderer so UI shows the login button
+        clearCookies()
+        win?.webContents.send('auth:loginStatus', 'session-expired')
       }
     }
   })
