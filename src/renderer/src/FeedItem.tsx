@@ -3,6 +3,7 @@ import { FeedItem as FeedItemType } from './types'
 interface Props {
   item: FeedItemType
   keywords: string[]
+  onRemove?: () => void
 }
 
 function timeAgo(timestamp: number): string {
@@ -32,7 +33,7 @@ function highlightKeywords(text: string, keywords: string[]): React.ReactNode {
   )
 }
 
-export default function FeedItem({ item, keywords }: Props) {
+export default function FeedItem({ item, keywords, onRemove }: Props) {
   const hasKeyword = keywords.length > 0 &&
     keywords.some((k) => item.text.toLowerCase().includes(k.toLowerCase()))
 
@@ -59,7 +60,16 @@ export default function FeedItem({ item, keywords }: Props) {
           {isReply && !isRetweet && <span className="feed-item__type-badge feed-item__type-badge--reply">↩</span>}
           <span className="feed-item__handle">{item.handle}</span>
         </div>
-        <span className="feed-item__time">{timeAgo(item.timestamp)}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="feed-item__time">{timeAgo(item.timestamp)}</span>
+          {onRemove && (
+            <button
+              className="feed-item__remove"
+              title="Dismiss"
+              onClick={(e) => { e.stopPropagation(); onRemove() }}
+            >✕</button>
+          )}
+        </div>
       </div>
 
       <div className="feed-item__text">{highlightKeywords(item.text, keywords)}</div>

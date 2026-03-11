@@ -66,6 +66,11 @@ export default function App() {
     setSettings((prev) => (prev ? { ...prev, ...updated } : prev))
   }
 
+  function handleRemoveItem(id: string) {
+    itemsRef.current = itemsRef.current.filter((i) => i.id !== id)
+    setItems([...itemsRef.current])
+  }
+
   return (
     <div
       className="app-root flex flex-col h-screen select-none"
@@ -125,6 +130,7 @@ export default function App() {
             items={visibleItems}
             keywords={settings?.keywords ?? []}
             scrollSpeed={settings?.scrollSpeed ?? 30}
+            onRemove={handleRemoveItem}
           />
         )}
       </div>

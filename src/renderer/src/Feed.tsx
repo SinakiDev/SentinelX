@@ -6,9 +6,10 @@ interface Props {
   items: FeedItemType[]
   keywords: string[]
   scrollSpeed: number
+  onRemove?: (id: string) => void
 }
 
-export default function Feed({ items, keywords, scrollSpeed }: Props) {
+export default function Feed({ items, keywords, scrollSpeed, onRemove }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const [paused, setPaused] = useState(false)
@@ -90,10 +91,10 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
         ) : (
           <>
             {items.map((item) => (
-              <FeedItemComponent key={item.id} item={item} keywords={keywords} />
+              <FeedItemComponent key={item.id} item={item} keywords={keywords} onRemove={onRemove ? () => onRemove(item.id) : undefined} />
             ))}
             {items.map((item) => (
-              <FeedItemComponent key={`dup-${item.id}`} item={item} keywords={keywords} />
+              <FeedItemComponent key={`dup-${item.id}`} item={item} keywords={keywords} onRemove={onRemove ? () => onRemove(item.id) : undefined} />
             ))}
           </>
         )}
