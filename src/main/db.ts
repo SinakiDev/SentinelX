@@ -7,6 +7,14 @@ export interface TweetRow {
   text: string
   timestamp: number
   created_at: string
+  url: string
+  likes: number
+  retweets: number
+  replies: number
+  views: number
+  isReply: boolean
+  isRetweet: boolean
+  photos: string[]
 }
 
 interface TweetStore {

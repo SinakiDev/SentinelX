@@ -1,9 +1,9 @@
-import { Scraper } from '@the-convocation/twitter-scraper'
+import { Scraper, SearchMode, Tweet } from '@the-convocation/twitter-scraper'
 import { insertTweet, TweetRow } from './db'
 
 let scraper: Scraper | null = null
 let pollTimer: NodeJS.Timeout | null = null
-let polling = false  // guard: skip cycle if previous one is still running
+let polling = false
 
 export interface PollConfig {
   accounts: string[]
@@ -60,27 +60,34 @@ export function updateAccounts(accounts: string[]): void {
   if (config) config.accounts = accounts
 }
 
-// Drain an async generator with a hard timeout.
-// If X stalls the connection, Promise.race rejects after timeoutMs
-// and the poller moves on. The stalled generator keeps running in the
-// background but its results are ignored.
+function tweetToRow(tweet: Tweet, handle: string): TweetRow {
+  return {
+    id: tweet.id!,
+    handle: `@${handle}`,
+    name: tweet.username ?? handle,
+    text: tweet.text!,
+    timestamp: tweet.timestamp ?? Math.floor(Date.now() / 1000),
+    created_at: tweet.timeParsed?.toISOString() ?? new Date().toISOString(),
+    url: tweet.permanentUrl ?? '',
+    likes: tweet.likes ?? 0,
+    retweets: tweet.retweets ?? 0,
+    replies: tweet.replies ?? 0,
+    views: tweet.views ?? 0,
+    isReply: tweet.isReply ?? false,
+    isRetweet: tweet.isRetweet ?? false,
+    photos: (tweet.photos ?? []).map((p) => p.url)
+  }
+}
+
 async function fetchAccountTweets(handle: string, timeoutMs: number): Promise<TweetRow[]> {
   if (!scraper) return []
-
   const rows: TweetRow[] = []
 
   const fetchPromise = (async () => {
     const tweets = scraper!.getTweets(handle, 5)
     for await (const tweet of tweets) {
       if (!tweet.id || !tweet.text) continue
-      rows.push({
-        id: tweet.id,
-        handle: `@${handle}`,
-        name: tweet.username ?? handle,
-        text: tweet.text,
-        timestamp: tweet.timestamp ?? Math.floor(Date.now() / 1000),
-        created_at: tweet.timeParsed?.toISOString() ?? new Date().toISOString()
-      })
+      rows.push(tweetToRow(tweet, handle))
     }
     return rows
   })()
@@ -92,14 +99,35 @@ async function fetchAccountTweets(handle: string, timeoutMs: number): Promise<Tw
   return Promise.race([fetchPromise, timeoutPromise])
 }
 
+export async function searchWithScraper(query: string, maxResults: number, timeoutMs: number): Promise<TweetRow[]> {
+  if (!scraper) throw new Error('Not logged in')
+  const rows: TweetRow[] = []
+
+  const fetchPromise = (async () => {
+    const tweets = scraper!.searchTweets(query, maxResults, SearchMode.Latest)
+    for await (const tweet of tweets) {
+      if (!tweet.id || !tweet.text) continue
+      const handle = tweet.username ?? 'unknown'
+      rows.push(tweetToRow(tweet, handle))
+    }
+    return rows
+  })()
+
+  const timeoutPromise = new Promise<TweetRow[]>((_, reject) =>
+    setTimeout(() => reject(new Error('Search timed out')), timeoutMs)
+  )
+
+  return Promise.race([fetchPromise, timeoutPromise])
+}
+
 async function pollAccounts(): Promise<void> {
   if (!config || !scraper) return
-  if (polling) return  // previous cycle still running, skip this tick
+  if (polling) return
   polling = true
 
   try {
     for (const handle of config.accounts) {
-      if (!scraper || !config) break  // scraper was cleared mid-cycle (logout/close)
+      if (!scraper || !config) break
       try {
         const rows = await fetchAccountTweets(handle, 20_000)
         for (const row of rows) {

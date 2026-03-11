@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('api', {
   // Window
   minimize: () => ipcRenderer.invoke('window:minimize'),
   close: () => ipcRenderer.invoke('window:close'),
+  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+
+  // Search
+  searchTweets: (query: string): Promise<{ results: FeedItem[], error?: string }> =>
+    ipcRenderer.invoke('search:query', query),
 
   // Events
   onFeedItem: (cb: (item: FeedItem) => void) => {
@@ -49,6 +54,14 @@ export interface FeedItem {
   text: string
   timestamp: number
   created_at: string
+  url: string
+  likes: number
+  retweets: number
+  replies: number
+  views: number
+  isReply: boolean
+  isRetweet: boolean
+  photos: string[]
 }
 
 export interface InitSettings {

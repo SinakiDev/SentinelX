@@ -5,6 +5,14 @@ export interface FeedItem {
   text: string
   timestamp: number
   created_at: string
+  url: string
+  likes: number
+  retweets: number
+  replies: number
+  views: number
+  isReply: boolean
+  isRetweet: boolean
+  photos: string[]
 }
 
 export interface Settings {
@@ -32,6 +40,8 @@ declare global {
       logout: () => Promise<{ success: boolean }>
       minimize: () => Promise<void>
       close: () => Promise<void>
+      openExternal: (url: string) => Promise<void>
+      searchTweets: (query: string) => Promise<{ results: FeedItem[], error?: string }>
       onFeedItem: (cb: (item: FeedItem) => void) => () => void
       onFeedError: (cb: (msg: string) => void) => () => void
       onInitSettings: (cb: (s: Settings) => void) => void
