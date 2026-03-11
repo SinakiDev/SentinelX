@@ -89,7 +89,7 @@ export default function Settings({ settings, onUpdate }: Props) {
       {/* Accounts */}
       <section className="settings-section">
         <h2 className="settings-heading">Monitored Accounts</h2>
-        <p className="text-xs text-yellow-600 mb-2">⚠ Keep under 10 accounts. Too many increases the risk of X rate-limiting or suspending your session. Poll interval is 90s per cycle.</p>
+        <p className="text-xs text-yellow-600 mb-2">⚠ Keep under 20 accounts. Too many increases the risk of X rate-limiting or suspending your session. Poll interval is 90s per cycle.</p>
         <div className="flex gap-2 mb-2">
           <input
             className="settings-input flex-1"
@@ -155,7 +155,7 @@ export default function Settings({ settings, onUpdate }: Props) {
         <div className="settings-row">
           <label className="settings-label">Max tweet age</label>
           <div className="flex gap-1 flex-wrap">
-            {([30, 60, 120, 240, null] as (number | null)[]).map((opt) => (
+            {([30, 45, 60, 120, 240, null] as (number | null)[]).map((opt) => (
               <button
                 key={opt ?? 'all'}
                 className={`age-btn ${maxAge === opt ? 'age-btn--active' : ''}`}

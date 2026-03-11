@@ -1,6 +1,6 @@
 {
   "name": "sentinelx",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Live OSINT X account monitor",
   "main": "./out/main/index.js",
   "scripts": {
