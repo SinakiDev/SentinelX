@@ -13,6 +13,17 @@ export interface PollConfig {
 
 let config: PollConfig | null = null
 
+const RATE_LIMIT_BACKOFF_MS = 15 * 60 * 1000
+let rateLimitUntil = 0
+
+function isRateLimited(): boolean {
+  return Date.now() < rateLimitUntil
+}
+
+function setRateLimit(): void {
+  rateLimitUntil = Date.now() + RATE_LIMIT_BACKOFF_MS
+}
+
 export async function initScraperWithCookies(
   cookieStrings: string[],
   onError: (msg: string) => void
@@ -75,6 +86,7 @@ async function fetchAccountTweets(handle: string, timeoutMs: number): Promise<Tw
 
 async function pollOneAccount(handle: string): Promise<void> {
   if (!scraper || !config) return
+  if (isRateLimited()) return  // session-wide backoff active, skip silently
   try {
     const rows = await fetchAccountTweets(handle, 20_000)
     for (const row of rows) {
@@ -83,7 +95,11 @@ async function pollOneAccount(handle: string): Promise<void> {
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (msg === 'Timed out') return // transient — will retry next cycle, no need to surface
+    if (msg === 'Timed out') return
+    if (msg.includes('429') || /too.many.requests/i.test(msg) || /rate.limit/i.test(msg)) {
+      setRateLimit()  // pause all accounts for 15 minutes
+      return
+    }
     if (config) config.onError(`@${handle}: ${msg}`)
   }
 }
