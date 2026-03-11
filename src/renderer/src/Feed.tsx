@@ -16,7 +16,6 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
   const pausedRef = useRef(false)
   const speedRef = useRef(scrollSpeed)
   const posRef = useRef(0)
-  const prevLengthRef = useRef(0)
 
   useEffect(() => { pausedRef.current = paused }, [paused])
   useEffect(() => { speedRef.current = scrollSpeed }, [scrollSpeed])
@@ -30,14 +29,15 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
     let last = 0
 
     function step(ts: number) {
-      const delta = last ? (ts - last) / 1000 : 0
+      const rawDelta = last ? (ts - last) / 1000 : 0
+      const delta = Math.min(rawDelta, 0.05) // cap at 50ms — survives minimize/restore
       last = ts
 
       if (!pausedRef.current) {
         const half = inner.scrollHeight / 2
         if (half > container.clientHeight) {
           posRef.current += speedRef.current * delta
-          if (posRef.current >= half) posRef.current -= half
+          if (posRef.current >= half) posRef.current = posRef.current % half
           inner.style.transform = `translateY(-${posRef.current}px)`
         }
       }
@@ -48,14 +48,6 @@ export default function Feed({ items, keywords, scrollSpeed }: Props) {
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
   }, [])
-
-  useEffect(() => {
-    if (items.length > prevLengthRef.current && !pausedRef.current) {
-      posRef.current = 0
-      if (innerRef.current) innerRef.current.style.transform = 'translateY(0)'
-    }
-    prevLengthRef.current = items.length
-  }, [items.length])
 
   function handleWheel(e: React.WheelEvent) {
     const container = containerRef.current

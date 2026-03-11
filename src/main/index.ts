@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage, shell, screen } from 'electron'
 import { join } from 'path'
 import Store from 'electron-store'
 import { getRecentTweets } from './db'
@@ -149,6 +149,14 @@ function createWindow(): void {
     }
   })
 
+  // Use highest z-level so it stays above all windows including on secondary monitors
+  if (s.get('alwaysOnTop')) win.setAlwaysOnTop(true, 'screen-saver')
+
+  // Re-apply always-on-top on every move — covers monitor switch z-order resets
+  win.on('moved', () => {
+    if (win?.isAlwaysOnTop()) win.setAlwaysOnTop(true, 'screen-saver')
+  })
+
   win.setOpacity(Math.cbrt(s.get('opacity')))
 
   win.on('close', () => {
@@ -179,6 +187,11 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   const s = getStore()
   createWindow()
+
+  // Re-apply always-on-top when display config changes (monitor plug/unplug, resolution change)
+  screen.on('display-metrics-changed', () => {
+    if (win?.isAlwaysOnTop()) win.setAlwaysOnTop(true, 'screen-saver')
+  })
 
   win?.webContents.once('did-finish-load', async () => {
     win?.webContents.send('init:settings', {
@@ -216,7 +229,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   stopPolling()
   clearScraper()
-  app.quit()
+  app.exit(0)
 })
 
 ipcMain.handle('settings:get', () => {
@@ -241,7 +254,7 @@ ipcMain.handle('settings:setOpacity', (_, val: unknown) => {
 ipcMain.handle('settings:setAlwaysOnTop', (_, val: unknown) => {
   if (typeof val !== 'boolean') return
   getStore().set('alwaysOnTop', val)
-  win?.setAlwaysOnTop(val)
+  win?.setAlwaysOnTop(val, 'screen-saver')
 })
 
 ipcMain.handle('settings:setScrollSpeed', (_, val: unknown) => {
