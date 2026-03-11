@@ -6,10 +6,11 @@ interface Props {
   items: FeedItemType[]
   keywords: string[]
   scrollSpeed: number
+  autoScroll?: boolean
   onRemove?: (id: string) => void
 }
 
-export default function Feed({ items, keywords, scrollSpeed, onRemove }: Props) {
+export default function Feed({ items, keywords, scrollSpeed, autoScroll = true, onRemove }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const [paused, setPaused] = useState(false)
@@ -71,6 +72,23 @@ export default function Feed({ items, keywords, scrollSpeed, onRemove }: Props) 
     if (half <= container.clientHeight) return
     posRef.current = Math.max(0, Math.min(half - 1, posRef.current + e.deltaY))
     inner.style.transform = `translateY(-${posRef.current}px)`
+  }
+
+  if (!autoScroll) {
+    return (
+      <div className="feed-scroll feed-scroll--static">
+        {items.length === 0 ? (
+          <div className="feed-empty">
+            <p>No tweets yet.</p>
+            <p className="text-xs mt-1 text-gray-500">Add accounts &amp; log in via ⚙ Settings.</p>
+          </div>
+        ) : (
+          items.map((item) => (
+            <FeedItemComponent key={item.id} item={item} keywords={keywords} onRemove={onRemove ? () => onRemove(item.id) : undefined} />
+          ))
+        )}
+      </div>
+    )
   }
 
   return (

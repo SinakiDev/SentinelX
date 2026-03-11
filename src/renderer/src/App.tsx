@@ -157,6 +157,7 @@ export default function App() {
             items={visibleItems}
             keywords={settings?.keywords ?? []}
             scrollSpeed={settings?.scrollSpeed ?? 30}
+            autoScroll={settings?.autoScroll ?? true}
             onRemove={handleRemoveItem}
           />
         )}

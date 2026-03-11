@@ -129,6 +129,17 @@ html, body, #root {
   position: relative;
 }
 
+.feed-scroll--static {
+  overflow-y: auto;
+  display: block;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.feed-scroll--static::-webkit-scrollbar {
+  display: none;
+}
+
 .feed-empty {
   flex: 1;
   display: flex;

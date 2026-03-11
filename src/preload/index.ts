@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   setScrollSpeed: (val: number) => ipcRenderer.invoke('settings:setScrollSpeed', val),
   setKeywords: (kw: string[]) => ipcRenderer.invoke('settings:setKeywords', kw),
   setMaxAge: (val: number | null) => ipcRenderer.invoke('settings:setMaxAge', val),
+  setAutoScroll: (val: boolean) => ipcRenderer.invoke('settings:setAutoScroll', val),
 
   // Accounts
   addAccount: (handle: string) => ipcRenderer.invoke('accounts:add', handle),
@@ -72,4 +73,5 @@ export interface InitSettings {
   opacity: number
   alwaysOnTop: boolean
   hasCredentials: boolean
+  autoScroll: boolean
 }

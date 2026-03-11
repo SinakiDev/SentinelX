@@ -13,6 +13,7 @@ export default function Settings({ settings, onUpdate }: Props) {
   const [scrollSpeed, setScrollSpeed] = useState(settings.scrollSpeed)
   const [opacity, setOpacity] = useState(settings.opacity)
   const [maxAge, setMaxAge] = useState<number | null>(settings.maxAgeMinutes)
+  const [autoScroll, setAutoScroll] = useState(settings.autoScroll)
   const [loginStatus, setLoginStatus] = useState<string | null>(null)
   const [loginBusy, setLoginBusy] = useState(false)
   const [hasCredentials, setHasCredentials] = useState(settings.hasCredentials)
@@ -51,6 +52,12 @@ export default function Settings({ settings, onUpdate }: Props) {
     setScrollSpeed(val)
     await window.api.setScrollSpeed(val)
     onUpdate({ scrollSpeed: val })
+  }
+
+  async function handleAutoScroll(val: boolean) {
+    setAutoScroll(val)
+    await window.api.setAutoScroll(val)
+    onUpdate({ autoScroll: val })
   }
 
   async function handleMaxAge(val: number | null) {
@@ -162,6 +169,20 @@ export default function Settings({ settings, onUpdate }: Props) {
                 onClick={() => handleMaxAge(opt)}
               >
                 {opt === null ? 'All' : opt < 60 ? `${opt}m` : `${opt / 60}h`}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row">
+          <label className="settings-label">Auto-scroll</label>
+          <div className="flex gap-1">
+            {([true, false] as boolean[]).map((opt) => (
+              <button
+                key={String(opt)}
+                className={`age-btn ${autoScroll === opt ? 'age-btn--active' : ''}`}
+                onClick={() => handleAutoScroll(opt)}
+              >
+                {opt ? 'On' : 'Off'}
               </button>
             ))}
           </div>

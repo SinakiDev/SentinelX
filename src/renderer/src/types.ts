@@ -23,6 +23,7 @@ export interface Settings {
   alwaysOnTop: boolean
   maxAgeMinutes: number | null
   hasCredentials: boolean
+  autoScroll: boolean
 }
 
 declare global {
@@ -34,6 +35,7 @@ declare global {
       setScrollSpeed: (val: number) => Promise<void>
       setKeywords: (kw: string[]) => Promise<void>
       setMaxAge: (val: number | null) => Promise<void>
+      setAutoScroll: (val: boolean) => Promise<void>
       addAccount: (handle: string) => Promise<{ accounts: string[] }>
       removeAccount: (handle: string) => Promise<{ accounts: string[] }>
       openLoginWindow: () => Promise<{ success: boolean }>

@@ -14,6 +14,7 @@ interface StoreSchema {
   windowBounds: { x: number; y: number; width: number; height: number }
   cookieBlob: string | null   // OS-encrypted JSON array of session cookies
   rateLimitUntil: number      // unix ms timestamp; 0 = not rate limited
+  autoScroll: boolean
 }
 
 const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/
@@ -51,7 +52,8 @@ function getStore(): Store<StoreSchema> {
         maxAgeMinutes: 120,
         windowBounds: { x: 100, y: 100, width: 420, height: 700 },
         cookieBlob: null,
-        rateLimitUntil: 0
+        rateLimitUntil: 0,
+        autoScroll: true
       }
     })
   }
@@ -204,7 +206,8 @@ app.whenReady().then(async () => {
       opacity: s.get('opacity'),
       alwaysOnTop: s.get('alwaysOnTop'),
       maxAgeMinutes: s.get('maxAgeMinutes'),
-      hasCredentials: s.get('cookieBlob') !== null
+      hasCredentials: s.get('cookieBlob') !== null,
+      autoScroll: s.get('autoScroll')
     })
 
     const cached = getRecentTweets(50).reverse()
@@ -255,7 +258,8 @@ ipcMain.handle('settings:get', () => {
     scrollSpeed: s.get('scrollSpeed'),
     opacity: s.get('opacity'),
     alwaysOnTop: s.get('alwaysOnTop'),
-    hasCredentials: s.get('cookieBlob') !== null
+    hasCredentials: s.get('cookieBlob') !== null,
+    autoScroll: s.get('autoScroll')
   }
 })
 
@@ -276,6 +280,11 @@ ipcMain.handle('settings:setScrollSpeed', (_, val: unknown) => {
   const v = clamp(val, 5, 120)
   if (v === null) return
   getStore().set('scrollSpeed', v)
+})
+
+ipcMain.handle('settings:setAutoScroll', (_, val: unknown) => {
+  if (typeof val !== 'boolean') return
+  getStore().set('autoScroll', val)
 })
 
 ipcMain.handle('settings:setMaxAge', (_, val: unknown) => {
