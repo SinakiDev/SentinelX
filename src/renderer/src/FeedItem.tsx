@@ -40,7 +40,13 @@ export default function FeedItem({ item, keywords }: Props) {
     if (item.url) window.api.openExternal(item.url)
   }
 
-  const hasStats = (item.likes + item.retweets + item.replies) > 0
+  const photos = item.photos ?? []
+  const likes = item.likes ?? 0
+  const retweets = item.retweets ?? 0
+  const replies = item.replies ?? 0
+  const isRetweet = item.isRetweet ?? false
+  const isReply = item.isReply ?? false
+  const hasStats = (likes + retweets + replies) > 0
 
   return (
     <div
@@ -49,8 +55,8 @@ export default function FeedItem({ item, keywords }: Props) {
     >
       <div className="feed-item__header">
         <div className="flex items-center gap-1.5">
-          {item.isRetweet && <span className="feed-item__type-badge feed-item__type-badge--rt">RT</span>}
-          {item.isReply && !item.isRetweet && <span className="feed-item__type-badge feed-item__type-badge--reply">↩</span>}
+          {isRetweet && <span className="feed-item__type-badge feed-item__type-badge--rt">RT</span>}
+          {isReply && !isRetweet && <span className="feed-item__type-badge feed-item__type-badge--reply">↩</span>}
           <span className="feed-item__handle">{item.handle}</span>
         </div>
         <span className="feed-item__time">{timeAgo(item.timestamp)}</span>
@@ -58,9 +64,9 @@ export default function FeedItem({ item, keywords }: Props) {
 
       <div className="feed-item__text">{highlightKeywords(item.text, keywords)}</div>
 
-      {item.photos.length > 0 && (
+      {photos.length > 0 && (
         <img
-          src={item.photos[0]}
+          src={photos[0]}
           alt=""
           className="feed-item__photo"
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
@@ -69,9 +75,9 @@ export default function FeedItem({ item, keywords }: Props) {
 
       {hasStats && (
         <div className="feed-item__stats">
-          {item.likes > 0 && <span>♥ {fmtNum(item.likes)}</span>}
-          {item.retweets > 0 && <span>🔁 {fmtNum(item.retweets)}</span>}
-          {item.replies > 0 && <span>💬 {fmtNum(item.replies)}</span>}
+          {likes > 0 && <span>♥ {fmtNum(likes)}</span>}
+          {retweets > 0 && <span>🔁 {fmtNum(retweets)}</span>}
+          {replies > 0 && <span>💬 {fmtNum(replies)}</span>}
         </div>
       )}
 
