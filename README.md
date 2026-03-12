@@ -78,4 +78,4 @@ npm run dist       # build Windows zip -> dist/
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+See [LICENSE](LICENSE)
