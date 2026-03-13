@@ -9,14 +9,15 @@ contextBridge.exposeInMainWorld('api', {
   setKeywords: (kw: string[]) => ipcRenderer.invoke('settings:setKeywords', kw),
   setMaxAge: (val: number | null) => ipcRenderer.invoke('settings:setMaxAge', val),
   setAutoScroll: (val: boolean) => ipcRenderer.invoke('settings:setAutoScroll', val),
+  setPollingInterval: (val: number) => ipcRenderer.invoke('settings:setPollingInterval', val),
 
   // Accounts
   addAccount: (handle: string) => ipcRenderer.invoke('accounts:add', handle),
   removeAccount: (handle: string) => ipcRenderer.invoke('accounts:remove', handle),
 
   // Auth
-  openLoginWindow: () => ipcRenderer.invoke('auth:openLoginWindow'),
-  logout: () => ipcRenderer.invoke('auth:logout'),
+  saveApiKey: (key: string) => ipcRenderer.invoke('auth:saveApiKey', key),
+  clearApiKey: () => ipcRenderer.invoke('auth:clearApiKey'),
 
   // Window
   minimize: () => ipcRenderer.invoke('window:minimize'),
@@ -34,19 +35,6 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('feed:error', handler)
     return () => ipcRenderer.removeListener('feed:error', handler)
   },
-  onInitSettings: (cb: (s: InitSettings) => void) => {
-    ipcRenderer.once('init:settings', (_e, s) => cb(s))
-  },
-  onLoginStatus: (cb: (status: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status)
-    ipcRenderer.on('auth:loginStatus', handler)
-    return () => ipcRenderer.removeListener('auth:loginStatus', handler)
-  },
-  onRateLimit: (cb: (until: number) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, until: number) => cb(until)
-    ipcRenderer.on('feed:rateLimit', handler)
-    return () => ipcRenderer.removeListener('feed:rateLimit', handler)
-  }
 })
 
 export interface FeedItem {
@@ -66,12 +54,3 @@ export interface FeedItem {
   photos: string[]
 }
 
-export interface InitSettings {
-  accounts: string[]
-  keywords: string[]
-  scrollSpeed: number
-  opacity: number
-  alwaysOnTop: boolean
-  hasCredentials: boolean
-  autoScroll: boolean
-}

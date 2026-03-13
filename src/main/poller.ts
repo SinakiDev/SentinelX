@@ -1,165 +1,214 @@
-import { Scraper, Tweet } from '@the-convocation/twitter-scraper'
 import { insertTweet, TweetRow } from './db'
+import { log } from './logger'
 
-let scraper: Scraper | null = null
-const accountTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+let lastCheckTime: Date | null = null
+let paused = false
+let consecutiveEmptyPolls = 0
+
+const MIN_INTERVAL_MS = 60_000  // hard floor — cannot be bypassed
+const FETCH_TIMEOUT_MS = 30_000 // abort hung requests after 30s
+const MAX_PAGES = 10            // credit safety cap — stop paginating after 10 pages
+// Slow interval = 5× the configured interval, capped at 30 min.
+// This keeps the slowdown proportional: 1min→5min, 3.5min→17.5min, 5min→25min.
+// Short intervals (≤2min) require 4 consecutive empty polls before slowing down;
+// longer intervals use 3.
+function emptyThreshold(intervalMs: number): number {
+  return intervalMs <= 120_000 ? 4 : 3
+}
 
 export interface PollConfig {
   accounts: string[]
   intervalMs: number
+  apiKey: string
+  initialSince?: Date
   onNewTweet: (tweet: TweetRow) => void
   onError: (msg: string) => void
-  onRateLimit?: (until: number) => void
+  onPollComplete?: (since: Date) => void
 }
 
 let config: PollConfig | null = null
 
-const RATE_LIMIT_BACKOFF_MS = 15 * 60 * 1000
-let rateLimitUntil = 0
-
-function isRateLimited(): boolean {
-  return Date.now() < rateLimitUntil
+interface ApiTweet {
+  id: string
+  url: string
+  text: string
+  retweetCount: number
+  replyCount: number
+  likeCount: number
+  viewCount: number
+  createdAt: string
+  isReply: boolean
+  retweeted_tweet: object | null
+  author: { userName: string; name: string }
 }
 
-function setRateLimit(): void {
-  rateLimitUntil = Date.now() + RATE_LIMIT_BACKOFF_MS
-  if (config?.onRateLimit) config.onRateLimit(rateLimitUntil)
-}
-
-export function restoreRateLimit(until: number): void {
-  if (until > Date.now()) rateLimitUntil = until
-}
-
-export async function initScraperWithCookies(
-  cookieStrings: string[],
-  onError: (msg: string) => void
-): Promise<boolean> {
-  try {
-    scraper = new Scraper()
-    await scraper.setCookies(cookieStrings)
-    const loggedIn = await scraper.isLoggedIn()
-    if (!loggedIn) {
-      onError('Session expired — please log in again via Settings.')
-      scraper = null
-      return false
-    }
-    return true
-  } catch (e: unknown) {
-    onError(`Auth error: ${e instanceof Error ? e.message : String(e)}`)
-    scraper = null
-    return false
-  }
-}
-
-function tweetToRow(tweet: Tweet, handle: string): TweetRow {
+function apiTweetToRow(t: ApiTweet): TweetRow {
+  const ts = Math.floor(new Date(t.createdAt).getTime() / 1000)
   return {
-    id: tweet.id!,
-    handle: `@${handle}`,
-    name: tweet.username ?? handle,
-    text: tweet.text!,
-    timestamp: tweet.timestamp ?? Math.floor(Date.now() / 1000),
-    created_at: tweet.timeParsed?.toISOString() ?? new Date().toISOString(),
-    url: tweet.permanentUrl ?? '',
-    likes: tweet.likes ?? 0,
-    retweets: tweet.retweets ?? 0,
-    replies: tweet.replies ?? 0,
-    views: tweet.views ?? 0,
-    isReply: tweet.isReply ?? false,
-    isRetweet: tweet.isRetweet ?? false,
-    photos: (tweet.photos ?? []).map((p) => p.url)
+    id: t.id,
+    handle: `@${t.author.userName}`,
+    name: t.author.name,
+    text: t.text,
+    timestamp: ts,
+    created_at: new Date(t.createdAt).toISOString(),
+    url: t.url,
+    likes: t.likeCount,
+    retweets: t.retweetCount,
+    replies: t.replyCount,
+    views: t.viewCount,
+    isReply: t.isReply,
+    isRetweet: t.retweeted_tweet != null,
+    photos: []
   }
 }
 
-async function fetchAccountTweets(handle: string, timeoutMs: number): Promise<TweetRow[]> {
-  if (!scraper) return []
-  const rows: TweetRow[] = []
-
-  const fetchPromise = (async () => {
-    const tweets = scraper!.getTweets(handle, 3)
-    for await (const tweet of tweets) {
-      if (!tweet.id || !tweet.text) continue
-      rows.push(tweetToRow(tweet, handle))
-    }
-    return rows
-  })()
-
-  const timeoutPromise = new Promise<TweetRow[]>((_, reject) =>
-    setTimeout(() => reject(new Error(`Timed out`)), timeoutMs)
-  )
-
-  return Promise.race([fetchPromise, timeoutPromise])
+function toQueryDate(d: Date): string {
+  return d.toISOString().replace('T', '_').replace(/\.\d{3}Z$/, '_UTC')
 }
 
-async function pollOneAccount(handle: string): Promise<void> {
-  if (!scraper || !config) return
-  if (isRateLimited()) return  // session-wide backoff active, skip silently
-  try {
-    const rows = await fetchAccountTweets(handle, 20_000)
-    for (const row of rows) {
-      const isNew = insertTweet(row)
-      if (isNew && config) config.onNewTweet(row)
+async function pollAll(): Promise<void> {
+  if (!config || config.accounts.length === 0) return
+
+  const until = new Date()
+  const since = lastCheckTime ?? new Date(Date.now() - 60 * 60 * 1000)
+  const windowMin = Math.round((until.getTime() - since.getTime()) / 60_000)
+
+  const fromParts = config.accounts.map(h => `from:${h}`).join(' OR ')
+  const query = `(${fromParts}) since:${toQueryDate(since)} until:${toQueryDate(until)}`
+
+  const slow = consecutiveEmptyPolls >= emptyThreshold(config.intervalMs)
+  log('INFO', `Polling ${config.accounts.length} accounts (window: ${windowMin}m${slow ? ', slow mode' : ''})`)
+
+  const allTweets: ApiTweet[] = []
+  let cursor: string | undefined
+  let pages = 0
+
+  while (pages < MAX_PAGES) {
+    const params = new URLSearchParams({ query, queryType: 'Latest' })
+    if (cursor) params.set('cursor', cursor)
+    const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?${params}`
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+    let res: Response
+    try {
+      res = await fetch(url, { headers: { 'X-API-Key': config.apiKey }, signal: controller.signal })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      log('ERROR', `Poll failed: ${msg}`)
+      config.onError(msg)
+      return
+    } finally {
+      clearTimeout(timeoutId)
     }
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (msg === 'Timed out') return
-    if (msg.includes('429') || /too.many.requests/i.test(msg) || /rate.limit/i.test(msg)) {
-      setRateLimit()  // pause all accounts for 15 minutes
+
+    if (!res.ok) {
+      let body = ''
+      try { body = await res.text() } catch { /* ignore */ }
+      log('ERROR', `HTTP ${res.status} — ${body.slice(0, 200)}`)
+      config.onError(`HTTP ${res.status}`)
       return
     }
-    if (config) config.onError(`@${handle}: ${msg}`)
+
+    const data = await res.json() as { tweets?: ApiTweet[]; has_next_page?: boolean; next_cursor?: string }
+    const page = data.tweets ?? []
+    allTweets.push(...page)
+    pages++
+    log('INFO', `page ${pages}: ${page.length} tweets, has_next=${data.has_next_page}`)
+
+    if (data.has_next_page && data.next_cursor) {
+      cursor = data.next_cursor
+    } else {
+      break
+    }
   }
+
+  if (pages >= MAX_PAGES) log('WARN', `Pagination capped at ${MAX_PAGES} pages`)
+
+  lastCheckTime = until
+  config.onPollComplete?.(until)
+
+  if (allTweets.length === 0) {
+    consecutiveEmptyPolls++
+    log('INFO', `0 new tweets (empty streak: ${consecutiveEmptyPolls})`)
+    return
+  }
+
+  consecutiveEmptyPolls = 0
+  const rows = allTweets.map(t => apiTweetToRow(t))
+  for (const row of rows) {
+    insertTweet(row)
+    config.onNewTweet(row)
+  }
+
+  log('INFO', `${rows.length} new tweets`)
 }
 
-function scheduleAccount(handle: string, delay: number): void {
-  clearTimeout(accountTimers.get(handle))
+export async function _pollForTesting(): Promise<void> {
+  return pollAll()
+}
+
+export function _resetStateForTesting(): void {
+  lastCheckTime = null
+  consecutiveEmptyPolls = 0
+  paused = false
+  config = null
+}
+
+function schedulePoll(delay: number): void {
+  if (pollTimer) clearTimeout(pollTimer)
   const timer = setTimeout(async () => {
-    await pollOneAccount(handle)
-    if (accountTimers.has(handle) && config) {
-      scheduleAccount(handle, config.intervalMs)
+    await pollAll()
+    if (pollTimer === timer && config && !paused) {
+      const slowMs = Math.min(config.intervalMs * 5, 30 * 60_000)
+      const next = consecutiveEmptyPolls >= emptyThreshold(config.intervalMs) ? slowMs : config.intervalMs
+      schedulePoll(next)
     }
   }, delay)
-  accountTimers.set(handle, timer)
+  pollTimer = timer
 }
 
-export async function startPolling(cfg: PollConfig): Promise<void> {
-  config = cfg
-  stopPolling()
-  cfg.accounts.forEach((handle, i) => {
-    scheduleAccount(handle, i * 3_000)
-  })
+export function startPolling(cfg: PollConfig): void {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  paused = false
+  consecutiveEmptyPolls = 0
+  lastCheckTime = cfg.initialSince ?? null
+  // Layer 2 of 2: enforce minimum regardless of what the caller passes.
+  config = { ...cfg, intervalMs: Math.max(MIN_INTERVAL_MS, cfg.intervalMs) }
+  log('INFO', `Polling started — ${config.accounts.length} accounts, interval ${config.intervalMs}ms, since=${lastCheckTime?.toISOString() ?? 'last 1h'}`)
+  schedulePoll(0)
 }
 
 export function stopPolling(): void {
-  for (const timer of accountTimers.values()) clearTimeout(timer)
-  accountTimers.clear()
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  log('INFO', 'Polling stopped')
 }
 
-export function clearScraper(): void {
-  scraper = null
-  config = null
+export function pausePolling(): void {
+  if (paused) return
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  paused = true
+  log('INFO', 'Polling paused (window minimized)')
+}
+
+export function resumePolling(): void {
+  if (!paused || !config) return
+  paused = false
+  log('INFO', 'Polling resumed')
+  schedulePoll(0)
 }
 
 export function updateAccounts(accounts: string[]): void {
   if (!config) return
-  const current = new Set(accountTimers.keys())
-  const next = new Set(accounts)
-
-  // Remove dropped accounts
-  for (const h of current) {
-    if (!next.has(h)) {
-      clearTimeout(accountTimers.get(h))
-      accountTimers.delete(h)
-    }
-  }
-
-  // Schedule new accounts, staggered 3s apart starting after 1s
-  let delay = 1_000
-  for (const h of next) {
-    if (!current.has(h)) {
-      scheduleAccount(h, delay)
-      delay += 3_000
-    }
-  }
-
   config.accounts = accounts
+  log('INFO', `Accounts updated: [${accounts.join(', ')}]`)
+}
+
+export function updateInterval(ms: number): void {
+  if (!config) return
+  const safe = Math.max(MIN_INTERVAL_MS, ms)
+  config.intervalMs = safe
+  log('INFO', `Poll interval updated to ${safe}ms`)
 }

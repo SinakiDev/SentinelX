@@ -1,8 +1,9 @@
 import { app, BrowserWindow, ipcMain, safeStorage, shell, screen } from 'electron'
 import { join } from 'path'
 import Store from 'electron-store'
-import { getRecentTweets } from './db'
-import { initScraperWithCookies, startPolling, stopPolling, updateAccounts, clearScraper, restoreRateLimit } from './poller'
+import { getRecentTweets, flushTweetCache } from './db'
+import { startPolling, stopPolling, pausePolling, resumePolling, updateAccounts, updateInterval } from './poller'
+import { log, getLogFilePath } from './logger'
 
 interface StoreSchema {
   accounts: string[]
@@ -10,10 +11,11 @@ interface StoreSchema {
   scrollSpeed: number
   opacity: number
   alwaysOnTop: boolean
-  maxAgeMinutes: number | null   // null = show all; otherwise filter by age
+  maxAgeMinutes: number | null
+  pollingIntervalMs: number
+  lastPollTime: string | null
   windowBounds: { x: number; y: number; width: number; height: number }
-  cookieBlob: string | null   // OS-encrypted JSON array of session cookies
-  rateLimitUntil: number      // unix ms timestamp; 0 = not rate limited
+  apiKeyBlob: string | null
   autoScroll: boolean
 }
 
@@ -50,9 +52,10 @@ function getStore(): Store<StoreSchema> {
         opacity: 1,
         alwaysOnTop: false,
         maxAgeMinutes: 120,
+        pollingIntervalMs: 210_000,
+        lastPollTime: null,
         windowBounds: { x: 100, y: 100, width: 420, height: 700 },
-        cookieBlob: null,
-        rateLimitUntil: 0,
+        apiKeyBlob: null,
         autoScroll: true
       }
     })
@@ -60,76 +63,25 @@ function getStore(): Store<StoreSchema> {
   return store
 }
 
-function saveCookies(cookieStrings: string[]): void {
+function saveApiKey(key: string): void {
   if (!safeStorage.isEncryptionAvailable()) return
-  const buf = safeStorage.encryptString(JSON.stringify(cookieStrings))
-  getStore().set('cookieBlob', buf.toString('base64'))
+  const buf = safeStorage.encryptString(key)
+  getStore().set('apiKeyBlob', buf.toString('base64'))
 }
 
-function loadCookies(): string[] | null {
+function loadApiKey(): string | null {
   if (!safeStorage.isEncryptionAvailable()) return null
-  const blob = getStore().get('cookieBlob')
+  const blob = getStore().get('apiKeyBlob')
   if (!blob) return null
   try {
-    const buf = Buffer.from(blob, 'base64')
-    const json = safeStorage.decryptString(buf)
-    return JSON.parse(json) as string[]
+    return safeStorage.decryptString(Buffer.from(blob, 'base64'))
   } catch {
     return null
   }
 }
 
-function clearCookies(): void {
-  getStore().set('cookieBlob', null)
-}
-
-const X_DOMAINS = ['https://x.com', 'https://twitter.com', 'https://www.x.com']
-const X_HOME_RE = /^https:\/\/(www\.)?(x\.com|twitter\.com)\/?(?:home)?$/
-
-async function openXLoginWindow(): Promise<string[] | null> {
-  return new Promise((resolve) => {
-    const loginWin = new BrowserWindow({
-      width: 620,
-      height: 740,
-      title: 'Log in to X',
-      webPreferences: {
-        partition: 'login-temp', // non-persistent in-memory session — fresh every time, no cached cookies
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false,
-        webSecurity: true
-      }
-    })
-
-    loginWin.setMenuBarVisibility(false)
-    loginWin.loadURL('https://x.com/i/flow/login')
-
-    let resolved = false
-
-    async function checkLogin(url: string) {
-      if (resolved) return
-      if (X_HOME_RE.test(url) || url.includes('/home')) {
-        resolved = true
-        try {
-          const all: Electron.Cookie[] = []
-          for (const domain of X_DOMAINS) {
-            const cookies = await loginWin.webContents.session.cookies.get({ url: domain })
-            all.push(...cookies)
-          }
-          const cookieStrings = all.map((c) => `${c.name}=${c.value}`)
-          loginWin.close()
-          resolve(cookieStrings.length > 0 ? cookieStrings : null)
-        } catch {
-          loginWin.close()
-          resolve(null)
-        }
-      }
-    }
-
-    loginWin.webContents.on('did-navigate', (_, url) => checkLogin(url))
-    loginWin.webContents.on('did-navigate-in-page', (_, url) => checkLogin(url))
-    loginWin.on('closed', () => { if (!resolved) resolve(null) })
-  })
+function clearApiKey(): void {
+  getStore().set('apiKeyBlob', null)
 }
 
 let win: BrowserWindow | null = null
@@ -150,19 +102,21 @@ function createWindow(): void {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      webSecurity: true
+      webSecurity: true,
+      backgroundThrottling: false
     }
   })
 
-  // Use highest z-level so it stays above all windows including on secondary monitors
   if (s.get('alwaysOnTop')) win.setAlwaysOnTop(true, 'screen-saver')
 
-  // Re-apply always-on-top on every move — covers monitor switch z-order resets
   win.on('moved', () => {
     if (win?.isAlwaysOnTop()) win.setAlwaysOnTop(true, 'screen-saver')
   })
 
   win.setOpacity(Math.cbrt(s.get('opacity')))
+
+  win.on('minimize', () => pausePolling())
+  win.on('restore', () => resumePolling())
 
   win.on('close', () => {
     if (win) {
@@ -171,6 +125,16 @@ function createWindow(): void {
     }
   })
   win.on('closed', () => { win = null })
+
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      if (win?.webContents.isDevToolsOpened()) {
+        win.webContents.closeDevTools()
+      } else {
+        win?.webContents.openDevTools({ mode: 'detach' })
+      }
+    }
+  })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeUrl(url)) shell.openExternal(url)
@@ -193,49 +157,29 @@ app.whenReady().then(async () => {
   const s = getStore()
   createWindow()
 
-  // Re-apply always-on-top when display config changes (monitor plug/unplug, resolution change)
   screen.on('display-metrics-changed', () => {
     if (win?.isAlwaysOnTop()) win.setAlwaysOnTop(true, 'screen-saver')
   })
 
   win?.webContents.once('did-finish-load', async () => {
-    win?.webContents.send('init:settings', {
-      accounts: s.get('accounts'),
-      keywords: s.get('keywords'),
-      scrollSpeed: s.get('scrollSpeed'),
-      opacity: s.get('opacity'),
-      alwaysOnTop: s.get('alwaysOnTop'),
-      maxAgeMinutes: s.get('maxAgeMinutes'),
-      hasCredentials: s.get('cookieBlob') !== null,
-      autoScroll: s.get('autoScroll')
-    })
-
     const cached = getRecentTweets(50).reverse()
     for (const t of cached) win?.webContents.send('feed:item', t)
 
-    // Restore rate limit if still active from a previous run
-    const storedRl = s.get('rateLimitUntil')
-    if (storedRl > Date.now()) {
-      restoreRateLimit(storedRl)
-      win?.webContents.send('feed:rateLimit', storedRl)
-    }
-
-    const cookies = loadCookies()
-    if (cookies && s.get('accounts').length > 0) {
-      const ok = await initScraperWithCookies(cookies, (msg) => win?.webContents.send('feed:error', msg))
-      if (ok) {
-        startPolling({
-          accounts: s.get('accounts'),
-          intervalMs: 90_000,
-          onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
-          onError: (msg) => win?.webContents.send('feed:error', msg),
-          onRateLimit: (until) => { s.set('rateLimitUntil', until); win?.webContents.send('feed:rateLimit', until) }
-        })
-      } else {
-        // Cookies are expired — clear them and tell the renderer so UI shows the login button
-        clearCookies()
-        win?.webContents.send('auth:loginStatus', 'session-expired')
-      }
+    const apiKey = loadApiKey()
+    if (apiKey && s.get('accounts').length > 0) {
+      log('INFO', 'API key found — starting polling')
+      const savedTime = s.get('lastPollTime')
+      startPolling({
+        accounts: s.get('accounts'),
+        intervalMs: s.get('pollingIntervalMs'),
+        apiKey,
+        initialSince: savedTime ? new Date(savedTime) : undefined,
+        onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
+        onError: (msg) => win?.webContents.send('feed:error', msg),
+        onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
+      })
+    } else if (!apiKey) {
+      log('INFO', 'No API key saved — enter one in Settings to start polling')
     }
   })
 
@@ -245,8 +189,9 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  log('INFO', 'App closing — flushing tweet cache')
+  flushTweetCache()
   stopPolling()
-  clearScraper()
   app.exit(0)
 })
 
@@ -258,7 +203,9 @@ ipcMain.handle('settings:get', () => {
     scrollSpeed: s.get('scrollSpeed'),
     opacity: s.get('opacity'),
     alwaysOnTop: s.get('alwaysOnTop'),
-    hasCredentials: s.get('cookieBlob') !== null,
+    maxAgeMinutes: s.get('maxAgeMinutes'),
+    pollingIntervalMs: s.get('pollingIntervalMs'),
+    hasApiKey: loadApiKey() !== null,
     autoScroll: s.get('autoScroll')
   }
 })
@@ -294,6 +241,16 @@ ipcMain.handle('settings:setMaxAge', (_, val: unknown) => {
   getStore().set('maxAgeMinutes', v)
 })
 
+// Layer 1 of 2: IPC clamps to [1min, 60min] before storing or using.
+// Layer 2 is inside startPolling itself — see poller.ts MIN_INTERVAL_MS.
+// Note: only updates the interval, does NOT restart polling (no free immediate poll).
+ipcMain.handle('settings:setPollingInterval', (_, val: unknown) => {
+  const v = clamp(val, 60_000, 3_600_000)
+  if (v === null) return
+  getStore().set('pollingIntervalMs', v)
+  updateInterval(v)
+})
+
 ipcMain.handle('settings:setKeywords', (_, keywords: unknown) => {
   if (!isStringArray(keywords)) return
   const safe = keywords.slice(0, 30).map((k) => k.slice(0, 50))
@@ -325,43 +282,31 @@ ipcMain.handle('accounts:remove', (_, handle: unknown) => {
   return { accounts: updated }
 })
 
-ipcMain.handle('auth:openLoginWindow', async () => {
-  win?.webContents.send('auth:loginStatus', 'opening')
-
-  const cookies = await openXLoginWindow()
-
-  if (!cookies) {
-    win?.webContents.send('auth:loginStatus', 'cancelled')
-    return { success: false }
-  }
-
+ipcMain.handle('auth:saveApiKey', async (_e, key: unknown) => {
+  if (typeof key !== 'string' || !key.trim()) return { success: false }
+  const trimmed = key.trim()
+  saveApiKey(trimmed)
   stopPolling()
-  clearScraper()
-
-  const ok = await initScraperWithCookies(cookies, (msg) => win?.webContents.send('feed:error', msg))
-
-  if (ok) {
-    saveCookies(cookies)
-    const s = getStore()
+  const s = getStore()
+  if (s.get('accounts').length > 0) {
     startPolling({
       accounts: s.get('accounts'),
-      intervalMs: 90_000,
+      intervalMs: s.get('pollingIntervalMs'),
+      apiKey: trimmed,
+      initialSince: (() => { const t = s.get('lastPollTime'); return t ? new Date(t) : undefined })(),
       onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
       onError: (msg) => win?.webContents.send('feed:error', msg),
-      onRateLimit: (until) => { s.set('rateLimitUntil', until); win?.webContents.send('feed:rateLimit', until) }
+      onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
     })
-    win?.webContents.send('auth:loginStatus', 'connected')
-    return { success: true }
   }
-
-  win?.webContents.send('auth:loginStatus', 'failed')
-  return { success: false }
+  log('INFO', 'API key saved — polling (re)started')
+  return { success: true }
 })
 
-ipcMain.handle('auth:logout', () => {
-  clearCookies()
+ipcMain.handle('auth:clearApiKey', () => {
+  clearApiKey()
   stopPolling()
-  clearScraper()
+  log('INFO', 'API key cleared — polling stopped')
   return { success: true }
 })
 
@@ -370,4 +315,8 @@ ipcMain.handle('window:close', () => win?.close())
 
 ipcMain.handle('shell:openExternal', (_e, url: unknown) => {
   if (typeof url === 'string' && isSafeUrl(url)) shell.openExternal(url)
+})
+
+ipcMain.handle('shell:openLogFile', () => {
+  shell.openPath(getLogFilePath())
 })

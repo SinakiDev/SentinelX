@@ -22,8 +22,9 @@ export interface Settings {
   opacity: number
   alwaysOnTop: boolean
   maxAgeMinutes: number | null
-  hasCredentials: boolean
+  hasApiKey: boolean
   autoScroll: boolean
+  pollingIntervalMs: number
 }
 
 declare global {
@@ -36,18 +37,16 @@ declare global {
       setKeywords: (kw: string[]) => Promise<void>
       setMaxAge: (val: number | null) => Promise<void>
       setAutoScroll: (val: boolean) => Promise<void>
+      setPollingInterval: (val: number) => Promise<void>
       addAccount: (handle: string) => Promise<{ accounts: string[] }>
       removeAccount: (handle: string) => Promise<{ accounts: string[] }>
-      openLoginWindow: () => Promise<{ success: boolean }>
-      logout: () => Promise<{ success: boolean }>
+      saveApiKey: (key: string) => Promise<{ success: boolean }>
+      clearApiKey: () => Promise<{ success: boolean }>
       minimize: () => Promise<void>
       close: () => Promise<void>
       openExternal: (url: string) => Promise<void>
       onFeedItem: (cb: (item: FeedItem) => void) => () => void
       onFeedError: (cb: (msg: string) => void) => () => void
-      onInitSettings: (cb: (s: Settings) => void) => void
-      onLoginStatus: (cb: (status: string) => void) => () => void
-      onRateLimit: (cb: (until: number) => void) => () => void
     }
   }
 }

@@ -9,8 +9,6 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [rateLimitUntil, setRateLimitUntil] = useState(0)
-  const [rlCountdown, setRlCountdown] = useState(0)
 
   const itemsRef = useRef<FeedItem[]>([])
   const [tick, setTick] = useState(0)
@@ -32,40 +30,14 @@ export default function App() {
       setTimeout(() => setError(null), 6000)
     })
 
-    const removeLoginStatus = window.api.onLoginStatus((status) => {
-      if (status === 'session-expired') {
-        setSettings((prev) => prev ? { ...prev, hasCredentials: false } : prev)
-        setShowSettings(true)
-      }
-    })
-
     const tickInterval = setInterval(() => setTick((t) => t + 1), 30_000)
 
     return () => {
       removeFeed()
       removeErr()
-      removeLoginStatus()
       clearInterval(tickInterval)
     }
   }, [])
-
-  useEffect(() => {
-    const removeRl = window.api.onRateLimit((until) => {
-      setRateLimitUntil(until)
-      setRlCountdown(Math.max(0, Math.ceil((until - Date.now()) / 1000)))
-    })
-    return () => removeRl()
-  }, [])
-
-  useEffect(() => {
-    if (rateLimitUntil === 0) return
-    const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((rateLimitUntil - Date.now()) / 1000))
-      setRlCountdown(remaining)
-      if (remaining === 0) setRateLimitUntil(0)
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [rateLimitUntil])
 
   const visibleItems = useMemo(() => {
     const maxAge = settings?.maxAgeMinutes ?? null
@@ -139,13 +111,6 @@ export default function App() {
       {error && (
         <div className="error-banner text-xs px-3 py-1 text-red-300 bg-red-900/60 flex-shrink-0">
           ⚠ {error}
-        </div>
-      )}
-
-      {/* Rate limit banner */}
-      {rlCountdown > 0 && (
-        <div className="text-xs px-3 py-1 text-yellow-300 bg-yellow-900/60 flex-shrink-0">
-          ⏳ Rate limited -- resuming in {Math.floor(rlCountdown / 60)}:{String(rlCountdown % 60).padStart(2, '0')}
         </div>
       )}
 

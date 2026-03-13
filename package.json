@@ -8,7 +8,9 @@
     "build": "electron-vite build",
     "preview": "cross-env ELECTRON_RUN_AS_NODE= electron-vite preview",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
+    "dist": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -25,10 +27,10 @@
     "electron-vite": "^2.x",
     "postcss": "^8.x",
     "tailwindcss": "^3.x",
-    "typescript": "^5.x"
+    "typescript": "^5.x",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
-    "@the-convocation/twitter-scraper": "latest",
     "electron-store": "^8.x",
     "react": "^18.x",
     "react-dom": "^18.x"
@@ -37,7 +39,14 @@
     "appId": "com.sentinelx.app",
     "productName": "SentinelX",
     "win": {
-      "target": [{ "target": "zip", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "directories": {
       "output": "dist"

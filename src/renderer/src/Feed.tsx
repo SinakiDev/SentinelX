@@ -14,20 +14,60 @@ export default function Feed({ items, keywords, scrollSpeed, autoScroll = true, 
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const [paused, setPaused] = useState(false)
+  const [canLoop, setCanLoop] = useState(false)
 
   const pausedRef = useRef(false)
   const speedRef = useRef(scrollSpeed)
+  const autoScrollRef = useRef(autoScroll)
   const posRef = useRef(0)
   const prevHalfRef = useRef(0)
+  const canLoopRef = useRef(false)
 
   useEffect(() => { pausedRef.current = paused }, [paused])
   useEffect(() => { speedRef.current = scrollSpeed }, [scrollSpeed])
 
-  // When new items are prepended (newest-first sort), compensate posRef so the
-  // visible content doesn't jump — add the extra height the new items introduced.
+  // Measure whether a single copy of the content is tall enough for infinite looping.
+  // When it isn't, we fall back to native scrolling instead of blocking all interaction.
+  useEffect(() => {
+    const container = containerRef.current
+    const inner = innerRef.current
+    if (!container || !inner) return
+
+    const ro = new ResizeObserver(() => {
+      const singleCopyHeight = canLoopRef.current
+        ? inner.scrollHeight / 2
+        : inner.scrollHeight
+      const shouldLoop = singleCopyHeight > container.clientHeight
+      if (shouldLoop !== canLoopRef.current) {
+        canLoopRef.current = shouldLoop
+        if (!shouldLoop) {
+          posRef.current = 0
+          prevHalfRef.current = 0
+          inner.style.transform = ''
+        }
+        setCanLoop(shouldLoop)
+      }
+    })
+
+    ro.observe(container)
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [])
+
+  // When autoScroll is re-enabled, reset scroll position to avoid jumps
+  useEffect(() => {
+    autoScrollRef.current = autoScroll
+    if (autoScroll) {
+      posRef.current = 0
+      prevHalfRef.current = 0
+      if (innerRef.current) innerRef.current.style.transform = 'translateY(0)'
+    }
+  }, [autoScroll])
+
+  // When new items arrive, compensate posRef so the visible content doesn't jump
   useEffect(() => {
     const inner = innerRef.current
-    if (!inner) return
+    if (!inner || !autoScrollRef.current || !canLoopRef.current) return
     const newHalf = inner.scrollHeight / 2
     if (prevHalfRef.current > 0 && newHalf > prevHalfRef.current) {
       posRef.current += newHalf - prevHalfRef.current
@@ -35,20 +75,19 @@ export default function Feed({ items, keywords, scrollSpeed, autoScroll = true, 
     prevHalfRef.current = newHalf
   }, [items])
 
+  // Single RAF loop for the lifetime of the component — reads refs dynamically each frame
   useEffect(() => {
-    const container = containerRef.current
-    const inner = innerRef.current
-    if (!container || !inner) return
-
     let raf: number
     let last = 0
 
     function step(ts: number) {
+      const container = containerRef.current
+      const inner = innerRef.current
       const rawDelta = last ? (ts - last) / 1000 : 0
       const delta = Math.min(rawDelta, 0.05) // cap at 50ms — survives minimize/restore
       last = ts
 
-      if (!pausedRef.current) {
+      if (container && inner && autoScrollRef.current && !pausedRef.current && canLoopRef.current) {
         const half = inner.scrollHeight / 2
         if (half > container.clientHeight) {
           posRef.current += speedRef.current * delta
@@ -74,34 +113,21 @@ export default function Feed({ items, keywords, scrollSpeed, autoScroll = true, 
     inner.style.transform = `translateY(-${posRef.current}px)`
   }
 
-  if (!autoScroll) {
-    return (
-      <div className="feed-scroll feed-scroll--static">
-        {items.length === 0 ? (
-          <div className="feed-empty">
-            <p>No tweets yet.</p>
-            <p className="text-xs mt-1 text-gray-500">Add accounts &amp; log in via ⚙ Settings.</p>
-          </div>
-        ) : (
-          items.map((item) => (
-            <FeedItemComponent key={item.id} item={item} keywords={keywords} onRemove={onRemove ? () => onRemove(item.id) : undefined} />
-          ))
-        )}
-      </div>
-    )
-  }
+  const isEmpty = items.length === 0
+  // When content is too short for infinite loop, fall back to native scrolling
+  const looping = autoScroll && canLoop
 
   return (
     <div
       ref={containerRef}
-      className="feed-scroll"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onWheel={handleWheel}
+      className={`feed-scroll${!looping ? ' feed-scroll--static' : ''}`}
+      onMouseEnter={looping ? () => setPaused(true) : undefined}
+      onMouseLeave={looping ? () => setPaused(false) : undefined}
+      onWheel={looping ? handleWheel : undefined}
     >
-      {paused && <div className="feed-paused-badge">PAUSED</div>}
+      {paused && looping && <div className="feed-paused-badge">PAUSED</div>}
       <div ref={innerRef}>
-        {items.length === 0 ? (
+        {isEmpty ? (
           <div className="feed-empty">
             <p>No tweets yet.</p>
             <p className="text-xs mt-1 text-gray-500">Add accounts &amp; log in via ⚙ Settings.</p>
@@ -111,7 +137,7 @@ export default function Feed({ items, keywords, scrollSpeed, autoScroll = true, 
             {items.map((item) => (
               <FeedItemComponent key={item.id} item={item} keywords={keywords} onRemove={onRemove ? () => onRemove(item.id) : undefined} />
             ))}
-            {items.map((item) => (
+            {looping && items.map((item) => (
               <FeedItemComponent key={`dup-${item.id}`} item={item} keywords={keywords} onRemove={onRemove ? () => onRemove(item.id) : undefined} />
             ))}
           </>

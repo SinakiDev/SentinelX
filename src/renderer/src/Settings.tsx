@@ -14,12 +14,12 @@ export default function Settings({ settings, onUpdate }: Props) {
   const [opacity, setOpacity] = useState(settings.opacity)
   const [maxAge, setMaxAge] = useState<number | null>(settings.maxAgeMinutes)
   const [autoScroll, setAutoScroll] = useState(settings.autoScroll)
-  const [loginStatus, setLoginStatus] = useState<string | null>(null)
-  const [loginBusy, setLoginBusy] = useState(false)
-  const [hasCredentials, setHasCredentials] = useState(settings.hasCredentials)
+  const [pollingIntervalMs, setPollingIntervalMs] = useState(settings.pollingIntervalMs)
+  const [hasApiKey, setHasApiKey] = useState(settings.hasApiKey)
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [keyStatus, setKeyStatus] = useState<string | null>(null)
 
-  // Keep in sync if parent detects session expiry while Settings is already open
-  useEffect(() => { setHasCredentials(settings.hasCredentials) }, [settings.hasCredentials])
+  useEffect(() => { setHasApiKey(settings.hasApiKey) }, [settings.hasApiKey])
 
   async function addAccount() {
     const handle = newHandle.trim()
@@ -60,35 +60,36 @@ export default function Settings({ settings, onUpdate }: Props) {
     onUpdate({ autoScroll: val })
   }
 
+  async function handlePollingInterval(val: number) {
+    setPollingIntervalMs(val)
+    await window.api.setPollingInterval(val)
+    onUpdate({ pollingIntervalMs: val })
+  }
+
   async function handleMaxAge(val: number | null) {
     setMaxAge(val)
     await window.api.setMaxAge(val)
     onUpdate({ maxAgeMinutes: val })
   }
 
-  async function handleLogin() {
-    setLoginBusy(true)
-    setLoginStatus('Opening X login window…')
-    const unsub = window.api.onLoginStatus((status) => {
-      if (status === 'opening') setLoginStatus('Login window open — sign in to X…')
-      else if (status === 'connected') { setLoginStatus('Connected!'); setHasCredentials(true); onUpdate({ hasCredentials: true }) }
-      else if (status === 'cancelled') setLoginStatus('Login cancelled.')
-      else if (status === 'failed') setLoginStatus('Login failed — try again.')
-    })
-    const result = await window.api.openLoginWindow()
-    unsub()
-    setLoginBusy(false)
+  async function handleSaveKey() {
+    const key = apiKeyInput.trim()
+    if (!key) return
+    const result = await window.api.saveApiKey(key)
     if (result.success) {
-      setHasCredentials(true)
-      onUpdate({ hasCredentials: true })
+      setHasApiKey(true)
+      setApiKeyInput('') // clear from memory — key is now in main process only
+      setKeyStatus(null)
+      onUpdate({ hasApiKey: true })
+    } else {
+      setKeyStatus('Failed to save key — try again.')
     }
   }
 
-  async function handleLogout() {
-    await window.api.logout()
-    setHasCredentials(false)
-    setLoginStatus('Logged out.')
-    onUpdate({ hasCredentials: false })
+  async function handleClearKey() {
+    await window.api.clearApiKey()
+    setHasApiKey(false)
+    onUpdate({ hasApiKey: false })
   }
 
   return (
@@ -96,7 +97,6 @@ export default function Settings({ settings, onUpdate }: Props) {
       {/* Accounts */}
       <section className="settings-section">
         <h2 className="settings-heading">Monitored Accounts</h2>
-        <p className="text-xs text-yellow-600 mb-2">⚠ Keep under 20 accounts. Too many increases the risk of X rate-limiting or suspending your session. Poll interval is 90s per cycle.</p>
         <div className="flex gap-2 mb-2">
           <input
             className="settings-input flex-1"
@@ -160,6 +160,23 @@ export default function Settings({ settings, onUpdate }: Props) {
           <span className="settings-val">{scrollSpeed}px/s</span>
         </div>
         <div className="settings-row">
+          <label className="settings-label">Poll interval</label>
+          <div className="flex gap-1 flex-wrap">
+            {([60_000, 120_000, 210_000, 300_000, 600_000] as number[]).map((ms) => {
+              const label = ms < 60_000 ? `${ms / 1000}s` : `${ms / 60_000}m`
+              return (
+                <button
+                  key={ms}
+                  className={`age-btn ${pollingIntervalMs === ms ? 'age-btn--active' : ''}`}
+                  onClick={() => handlePollingInterval(ms)}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="settings-row">
           <label className="settings-label">Max tweet age</label>
           <div className="flex gap-1 flex-wrap">
             {([30, 45, 60, 120, 240, null] as (number | null)[]).map((opt) => (
@@ -202,24 +219,32 @@ export default function Settings({ settings, onUpdate }: Props) {
         </div>
       </section>
 
-      {/* X Login */}
+      {/* API Key */}
       <section className="settings-section">
-        <h2 className="settings-heading">X Account Login</h2>
-        {hasCredentials ? (
+        <h2 className="settings-heading">twitterapi.io Key</h2>
+        {hasApiKey ? (
           <div>
-            <p className="text-xs text-green-400 mb-2">● Connected — polling active</p>
-            <button className="settings-btn settings-btn--danger" onClick={handleLogout}>
-              Logout
+            <p className="text-xs text-green-400 mb-2">● API key saved — polling active</p>
+            <button className="settings-btn settings-btn--danger" onClick={handleClearKey}>
+              Remove Key
             </button>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-gray-500">A browser window will open — log in to X, then return here.</p>
-            <button className="settings-btn" onClick={handleLogin} disabled={loginBusy}>
-              {loginBusy ? 'Waiting…' : 'Login with X →'}
+            <p className="text-xs text-gray-500">Get your key at twitterapi.io/dashboard</p>
+            <input
+              type="password"
+              className="settings-input"
+              placeholder="Paste API key…"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveKey()}
+            />
+            <button className="settings-btn" onClick={handleSaveKey} disabled={!apiKeyInput.trim()}>
+              Save Key
             </button>
-            {loginStatus && (
-              <p className="text-xs text-yellow-300">{loginStatus}</p>
+            {keyStatus && (
+              <p className="text-xs text-red-400">{keyStatus}</p>
             )}
           </div>
         )}
