@@ -35,7 +35,7 @@ Go to [Releases](https://github.com/SinakiDev/SentinelX/releases) and download t
 
 **Tips:**
 - Use a burner/alt X account to reduce risk to your main account
-- Keep monitored accounts **under 10** to avoid X rate-limiting
+- Keep monitored accounts **under 20** to avoid X rate-limiting
 - Hover the feed to pause and read; move away to resume
 - Adjust scroll speed in Settings -> Display
 
@@ -78,4 +78,4 @@ npm run dist       # build Windows zip -> dist/
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+See [LICENSE](LICENSE)
