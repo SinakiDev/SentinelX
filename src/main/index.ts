@@ -90,6 +90,8 @@ function createWindow(): void {
   const s = getStore()
   const bounds = s.get('windowBounds')
 
+  const isMac = process.platform === 'darwin'
+
   win = new BrowserWindow({
     ...bounds,
     frame: false,
@@ -97,6 +99,9 @@ function createWindow(): void {
     resizable: true,
     alwaysOnTop: s.get('alwaysOnTop'),
     skipTaskbar: false,
+    // On macOS, hiddenInset keeps the native traffic-light buttons visible
+    // while still letting our custom title bar control the drag region.
+    ...(isMac ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 10, y: 10 } } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -168,12 +173,11 @@ app.whenReady().then(async () => {
     const apiKey = loadApiKey()
     if (apiKey && s.get('accounts').length > 0) {
       log('INFO', 'API key found — starting polling')
-      const savedTime = s.get('lastPollTime')
       startPolling({
         accounts: s.get('accounts'),
         intervalMs: s.get('pollingIntervalMs'),
         apiKey,
-        initialSince: savedTime ? new Date(savedTime) : undefined,
+        initialSince: new Date(),
         onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
         onError: (msg) => win?.webContents.send('feed:error', msg),
         onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
@@ -189,10 +193,21 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  log('INFO', 'App closing — flushing tweet cache')
-  flushTweetCache()
-  stopPolling()
-  app.exit(0)
+  // On macOS apps conventionally stay running until the user quits explicitly.
+  if (process.platform !== 'darwin') {
+    log('INFO', 'App closing — flushing tweet cache')
+    flushTweetCache()
+    stopPolling()
+    app.exit(0)
+  }
+})
+
+app.on('before-quit', () => {
+  if (process.platform === 'darwin') {
+    log('INFO', 'App closing — flushing tweet cache')
+    flushTweetCache()
+    stopPolling()
+  }
 })
 
 ipcMain.handle('settings:get', () => {
@@ -293,7 +308,7 @@ ipcMain.handle('auth:saveApiKey', async (_e, key: unknown) => {
       accounts: s.get('accounts'),
       intervalMs: s.get('pollingIntervalMs'),
       apiKey: trimmed,
-      initialSince: (() => { const t = s.get('lastPollTime'); return t ? new Date(t) : undefined })(),
+      initialSince: new Date(),
       onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
       onError: (msg) => win?.webContents.send('feed:error', msg),
       onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
