@@ -134,7 +134,7 @@ describe('error handling', () => {
 // ─── Cursor advancement ───────────────────────────────────────────────────
 
 describe('cursor advancement', () => {
-  it('advances the since cursor so each poll window starts where the last ended', async () => {
+  it('uses a small overlap so delayed indexing does not miss tweets', async () => {
     mockFetch.mockResolvedValue(makeOkResponse())
     await setup()
 
@@ -146,9 +146,22 @@ describe('cursor advancement', () => {
     const getParam = (url: string, key: string) =>
       new URLSearchParams(new URL(url).search).get(key) ?? ''
 
+    const parseQueryDate = (s: string): number => {
+      const iso = s.replace('_UTC', 'Z').replace('_', 'T')
+      return new Date(iso).getTime()
+    }
+
     const firstUntil = getParam(firstUrl, 'query').match(/until:(\S+)/)?.[1]
     const secondSince = getParam(secondUrl, 'query').match(/since:(\S+)/)?.[1]
-    expect(secondSince).toBe(firstUntil)
+    expect(firstUntil).toBeTruthy()
+    expect(secondSince).toBeTruthy()
+
+    const firstUntilMs = parseQueryDate(firstUntil!)
+    const secondSinceMs = parseQueryDate(secondSince!)
+
+    // Second poll should overlap slightly before the first poll's until time.
+    expect(secondSinceMs).toBeLessThanOrEqual(firstUntilMs)
+    expect(secondSinceMs).toBeGreaterThanOrEqual(firstUntilMs - 2 * 60_000)
   })
 })
 
@@ -177,14 +190,14 @@ describe('pagination', () => {
 // ─── startPolling / stopPolling ───────────────────────────────────────────
 
 describe('startPolling / stopPolling', () => {
-  it('does not throw with valid config', async () => {
-    await expect(startPolling({
+  it('does not throw with valid config', () => {
+    expect(() => startPolling({
       accounts: ['alice', 'bob'],
       intervalMs: 90_000,
       apiKey: 'test-key',
       onNewTweet: vi.fn(),
       onError: vi.fn()
-    })).resolves.not.toThrow()
+    })).not.toThrow()
     stopPolling()
   })
 

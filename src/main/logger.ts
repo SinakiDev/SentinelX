@@ -4,6 +4,7 @@ import { appendFileSync, statSync, writeFileSync } from 'fs'
 
 let _logPath: string | null = null
 const MAX_LOG_BYTES = 500_000 // rotate at 500 KB
+const _subscribers = new Set<(line: string) => void>()
 
 function getLogPath(): string {
   if (!_logPath) _logPath = join(app.getPath('userData'), 'sentinelx.log')
@@ -31,8 +32,22 @@ export function log(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', ...args: unknown
   const line = `[${ts}] [${level}] ${msg}\n`
   process.stdout.write(line)
   writeLine(line)
+  for (const sub of _subscribers) {
+    try {
+      sub(line)
+    } catch {
+      // Never let subscriber failures impact app behavior.
+    }
+  }
 }
 
 export function getLogFilePath(): string {
   return getLogPath()
+}
+
+export function subscribeToLogs(cb: (line: string) => void): () => void {
+  _subscribers.add(cb)
+  return () => {
+    _subscribers.delete(cb)
+  }
 }

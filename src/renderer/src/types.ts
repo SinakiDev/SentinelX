@@ -47,6 +47,7 @@ declare global {
       openExternal: (url: string) => Promise<void>
       onFeedItem: (cb: (item: FeedItem) => void) => () => void
       onFeedError: (cb: (msg: string) => void) => () => void
+      onMainLog: (cb: (line: string) => void) => () => void
     }
   }
 }

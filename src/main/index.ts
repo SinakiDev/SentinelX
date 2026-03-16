@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, safeStorage, shell, screen } from 'electron'
+import { mkdirSync } from 'fs'
 import { join } from 'path'
 import Store from 'electron-store'
 import { getRecentTweets, flushTweetCache } from './db'
 import { startPolling, stopPolling, pausePolling, resumePolling, updateAccounts, updateInterval } from './poller'
-import { log, getLogFilePath } from './logger'
+import { log, getLogFilePath, subscribeToLogs } from './logger'
 
 interface StoreSchema {
   accounts: string[]
@@ -41,6 +42,18 @@ function isStringArray(val: unknown): val is string[] {
 }
 
 let store: Store<StoreSchema>
+
+function configureSessionDataPath(): void {
+  try {
+    // Keep Chromium cache/session files in a writable app-specific temp folder.
+    const sessionDataPath = join(app.getPath('temp'), 'sentinelx-session-data')
+    mkdirSync(sessionDataPath, { recursive: true })
+    app.setPath('sessionData', sessionDataPath)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log('WARN', `Failed to configure sessionData path: ${msg}`)
+  }
+}
 
 function getStore(): Store<StoreSchema> {
   if (!store) {
@@ -85,6 +98,9 @@ function clearApiKey(): void {
 }
 
 let win: BrowserWindow | null = null
+let unsubscribeLogForwarder: (() => void) | null = null
+
+configureSessionDataPath()
 
 function createWindow(): void {
   const s = getStore()
@@ -160,6 +176,13 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   const s = getStore()
+
+  if (!unsubscribeLogForwarder) {
+    unsubscribeLogForwarder = subscribeToLogs((line) => {
+      win?.webContents.send('debug:main-log', line)
+    })
+  }
+
   createWindow()
 
   screen.on('display-metrics-changed', () => {
@@ -177,7 +200,8 @@ app.whenReady().then(async () => {
         accounts: s.get('accounts'),
         intervalMs: s.get('pollingIntervalMs'),
         apiKey,
-        initialSince: new Date(),
+        // Backfill a short window on startup so fresh installs don't miss recent tweets.
+        initialSince: new Date(Date.now() - 15 * 60_000),
         onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
         onError: (msg) => win?.webContents.send('feed:error', msg),
         onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
@@ -203,6 +227,11 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  if (unsubscribeLogForwarder) {
+    unsubscribeLogForwarder()
+    unsubscribeLogForwarder = null
+  }
+
   if (process.platform === 'darwin') {
     log('INFO', 'App closing — flushing tweet cache')
     flushTweetCache()
@@ -308,7 +337,8 @@ ipcMain.handle('auth:saveApiKey', async (_e, key: unknown) => {
       accounts: s.get('accounts'),
       intervalMs: s.get('pollingIntervalMs'),
       apiKey: trimmed,
-      initialSince: new Date(),
+      // Backfill a short window after key save to catch tweets posted moments earlier.
+      initialSince: new Date(Date.now() - 15 * 60_000),
       onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
       onError: (msg) => win?.webContents.send('feed:error', msg),
       onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())

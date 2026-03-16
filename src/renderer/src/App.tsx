@@ -9,6 +9,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isMac = /Mac|Darwin/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform)
 
   const itemsRef = useRef<FeedItem[]>([])
   const [tick, setTick] = useState(0)
@@ -17,6 +18,10 @@ export default function App() {
     window.api.getSettings().then((s) => {
       setSettings(s)
       setPinned(s.alwaysOnTop)
+    })
+
+    const removeMainLog = window.api.onMainLog((line) => {
+      console.log(`[main] ${line.trimEnd()}`)
     })
 
     const removeFeed = window.api.onFeedItem((item) => {
@@ -33,6 +38,7 @@ export default function App() {
     const tickInterval = setInterval(() => setTick((t) => t + 1), 30_000)
 
     return () => {
+      removeMainLog()
       removeFeed()
       removeErr()
       clearInterval(tickInterval)
@@ -73,7 +79,10 @@ export default function App() {
         className="titlebar flex items-center justify-between px-3 py-1.5 flex-shrink-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-2"
+          style={isMac ? ({ marginLeft: 72 } as React.CSSProperties) : undefined}
+        >
           <span className="live-dot" />
           <span className="text-sm font-bold tracking-widest text-white uppercase">SentinelX</span>
         </div>

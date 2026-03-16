@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('feed:error', handler)
     return () => ipcRenderer.removeListener('feed:error', handler)
   },
+  onMainLog: (cb: (line: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, line: string) => cb(line)
+    ipcRenderer.on('debug:main-log', handler)
+    return () => ipcRenderer.removeListener('debug:main-log', handler)
+  },
 })
 
 export interface FeedItem {

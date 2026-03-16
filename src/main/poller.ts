@@ -2,6 +2,7 @@ import { insertTweet, TweetRow } from './db'
 import { log } from './logger'
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 let lastCheckTime: Date | null = null
 let paused = false
 let consecutiveEmptyPolls = 0
@@ -9,6 +10,7 @@ let consecutiveEmptyPolls = 0
 const MIN_INTERVAL_MS = 60_000  // hard floor — cannot be bypassed
 const FETCH_TIMEOUT_MS = 30_000 // abort hung requests after 30s
 const MAX_PAGES = 10            // credit safety cap — stop paginating after 10 pages
+const POLL_OVERLAP_MS = 2 * 60_000 // overlap window to tolerate API indexing delays
 // Slow interval = 5× the configured interval, capped at 30 min.
 // This keeps the slowdown proportional: 1min→5min, 3.5min→17.5min, 5min→25min.
 // Short intervals (≤2min) require 4 consecutive empty polls before slowing down;
@@ -28,6 +30,23 @@ export interface PollConfig {
 }
 
 let config: PollConfig | null = null
+
+function formatRemaining(ms: number): string {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000))
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec % 60
+  const minutePart = minutes > 0 ? `${minutes} minute${minutes === 1 ? '' : 's'}` : ''
+  const secondPart = seconds > 0 ? `${seconds} second${seconds === 1 ? '' : 's'}` : ''
+  if (minutePart && secondPart) return `${minutePart} ${secondPart}`
+  return minutePart || secondPart || '0 seconds'
+}
+
+function clearCountdownTimer(): void {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
 
 interface ApiTweet {
   id: string
@@ -71,7 +90,8 @@ async function pollAll(): Promise<void> {
   if (!config || config.accounts.length === 0) return
 
   const until = new Date()
-  const since = lastCheckTime ?? new Date(Date.now() - 60 * 60 * 1000)
+  const sinceBase = lastCheckTime ?? new Date(Date.now() - 60 * 60 * 1000)
+  const since = new Date(Math.max(0, sinceBase.getTime() - POLL_OVERLAP_MS))
   const windowMin = Math.round((until.getTime() - since.getTime()) / 60_000)
 
   const fromParts = config.accounts.map(h => `from:${h}`).join(' OR ')
@@ -139,8 +159,7 @@ async function pollAll(): Promise<void> {
   consecutiveEmptyPolls = 0
   const rows = allTweets.map(t => apiTweetToRow(t))
   for (const row of rows) {
-    insertTweet(row)
-    config.onNewTweet(row)
+    if (insertTweet(row)) config.onNewTweet(row)
   }
 
   log('INFO', `${rows.length} new tweets`)
@@ -159,7 +178,26 @@ export function _resetStateForTesting(): void {
 
 function schedulePoll(delay: number): void {
   if (pollTimer) clearTimeout(pollTimer)
+  clearCountdownTimer()
+
+  if (delay > 0) {
+    const endAt = Date.now() + delay
+    log('INFO', `Next poll in ${formatRemaining(delay)}`)
+
+    if (delay >= 30_000) {
+      countdownTimer = setInterval(() => {
+        const remaining = endAt - Date.now()
+        if (remaining <= 0) {
+          clearCountdownTimer()
+          return
+        }
+        log('INFO', `Next poll in ${formatRemaining(remaining)}`)
+      }, 30_000)
+    }
+  }
+
   const timer = setTimeout(async () => {
+    clearCountdownTimer()
     await pollAll()
     if (pollTimer === timer && config && !paused) {
       const slowMs = Math.min(config.intervalMs * 5, 30 * 60_000)
@@ -183,12 +221,14 @@ export function startPolling(cfg: PollConfig): void {
 
 export function stopPolling(): void {
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  clearCountdownTimer()
   log('INFO', 'Polling stopped')
 }
 
 export function pausePolling(): void {
   if (paused) return
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+  clearCountdownTimer()
   paused = true
   log('INFO', 'Polling paused (window minimized)')
 }
