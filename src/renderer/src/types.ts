@@ -25,6 +25,7 @@ export interface Settings {
   hasApiKey: boolean
   autoScroll: boolean
   pollingIntervalMs: number
+  adaptiveSlowdown: boolean
 }
 
 declare global {
@@ -44,6 +45,8 @@ declare global {
       clearApiKey: () => Promise<{ success: boolean }>
       minimize: () => Promise<void>
       close: () => Promise<void>
+      setAdaptiveSlowdown: (val: boolean) => Promise<void>
+      translateText: (text: string, targetLang?: string) => Promise<string>
       openExternal: (url: string) => Promise<void>
       onFeedItem: (cb: (item: FeedItem) => void) => () => void
       onFeedError: (cb: (msg: string) => void) => () => void

@@ -6,6 +6,7 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null
 let lastCheckTime: Date | null = null
 let paused = false
 let consecutiveEmptyPolls = 0
+let adaptiveSlowdownEnabled = true
 
 const MIN_INTERVAL_MS = 60_000  // hard floor — cannot be bypassed
 const FETCH_TIMEOUT_MS = 30_000 // abort hung requests after 30s
@@ -201,7 +202,8 @@ function schedulePoll(delay: number): void {
     await pollAll()
     if (pollTimer === timer && config && !paused) {
       const slowMs = Math.min(config.intervalMs * 5, 30 * 60_000)
-      const next = consecutiveEmptyPolls >= emptyThreshold(config.intervalMs) ? slowMs : config.intervalMs
+      const shouldSlow = adaptiveSlowdownEnabled && consecutiveEmptyPolls >= emptyThreshold(config.intervalMs)
+      const next = shouldSlow ? slowMs : config.intervalMs
       schedulePoll(next)
     }
   }, delay)
@@ -244,6 +246,11 @@ export function updateAccounts(accounts: string[]): void {
   if (!config) return
   config.accounts = accounts
   log('INFO', `Accounts updated: [${accounts.join(', ')}]`)
+}
+
+export function setAdaptiveSlowdown(enabled: boolean): void {
+  adaptiveSlowdownEnabled = enabled
+  log('INFO', `Adaptive slowdown ${enabled ? 'enabled' : 'disabled'}`)
 }
 
 export function updateInterval(ms: number): void {

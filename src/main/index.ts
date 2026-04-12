@@ -3,7 +3,7 @@ import { mkdirSync } from 'fs'
 import { join } from 'path'
 import Store from 'electron-store'
 import { getRecentTweets, flushTweetCache } from './db'
-import { startPolling, stopPolling, pausePolling, resumePolling, updateAccounts, updateInterval } from './poller'
+import { startPolling, stopPolling, pausePolling, resumePolling, updateAccounts, updateInterval, setAdaptiveSlowdown } from './poller'
 import { log, getLogFilePath, subscribeToLogs } from './logger'
 
 interface StoreSchema {
@@ -18,6 +18,7 @@ interface StoreSchema {
   windowBounds: { x: number; y: number; width: number; height: number }
   apiKeyBlob: string | null
   autoScroll: boolean
+  adaptiveSlowdown: boolean
 }
 
 const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/
@@ -69,7 +70,8 @@ function getStore(): Store<StoreSchema> {
         lastPollTime: null,
         windowBounds: { x: 100, y: 100, width: 420, height: 700 },
         apiKeyBlob: null,
-        autoScroll: true
+        autoScroll: true,
+        adaptiveSlowdown: true
       }
     })
   }
@@ -193,6 +195,8 @@ app.whenReady().then(async () => {
     const cached = getRecentTweets(50).reverse()
     for (const t of cached) win?.webContents.send('feed:item', t)
 
+    setAdaptiveSlowdown(s.get('adaptiveSlowdown'))
+
     const apiKey = loadApiKey()
     if (apiKey && s.get('accounts').length > 0) {
       log('INFO', 'API key found — starting polling')
@@ -201,7 +205,7 @@ app.whenReady().then(async () => {
         intervalMs: s.get('pollingIntervalMs'),
         apiKey,
         // Backfill a short window on startup so fresh installs don't miss recent tweets.
-        initialSince: new Date(Date.now() - 15 * 60_000),
+        initialSince: new Date(Date.now() - 30 * 60_000),
         onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
         onError: (msg) => win?.webContents.send('feed:error', msg),
         onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
@@ -250,7 +254,8 @@ ipcMain.handle('settings:get', () => {
     maxAgeMinutes: s.get('maxAgeMinutes'),
     pollingIntervalMs: s.get('pollingIntervalMs'),
     hasApiKey: loadApiKey() !== null,
-    autoScroll: s.get('autoScroll')
+    autoScroll: s.get('autoScroll'),
+    adaptiveSlowdown: s.get('adaptiveSlowdown')
   }
 })
 
@@ -338,7 +343,7 @@ ipcMain.handle('auth:saveApiKey', async (_e, key: unknown) => {
       intervalMs: s.get('pollingIntervalMs'),
       apiKey: trimmed,
       // Backfill a short window after key save to catch tweets posted moments earlier.
-      initialSince: new Date(Date.now() - 15 * 60_000),
+      initialSince: new Date(Date.now() - 30 * 60_000),
       onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
       onError: (msg) => win?.webContents.send('feed:error', msg),
       onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
@@ -353,6 +358,34 @@ ipcMain.handle('auth:clearApiKey', () => {
   stopPolling()
   log('INFO', 'API key cleared — polling stopped')
   return { success: true }
+})
+
+ipcMain.handle('settings:setAdaptiveSlowdown', (_, val: unknown) => {
+  if (typeof val !== 'boolean') return
+  getStore().set('adaptiveSlowdown', val)
+  setAdaptiveSlowdown(val)
+})
+
+ipcMain.handle('translate:text', async (_e, text: unknown, targetLang: unknown) => {
+  if (typeof text !== 'string' || !text.trim()) return ''
+  const lang = typeof targetLang === 'string' ? targetLang : 'en'
+  const params = new URLSearchParams({
+    client: 'gtx',
+    sl: 'auto',
+    tl: lang,
+    dt: 't',
+    q: text
+  })
+  try {
+    const res = await fetch(`https://translate.googleapis.com/translate_a/single?${params}`)
+    if (!res.ok) return ''
+    const data = await res.json() as [string, string][][]
+    // Response is nested arrays: [[["translated","original",...],...],...]
+    const sentences = data[0]
+    return sentences.map((s: [string, string]) => s[0]).join('')
+  } catch {
+    return ''
+  }
 })
 
 ipcMain.handle('window:minimize', () => win?.minimize())

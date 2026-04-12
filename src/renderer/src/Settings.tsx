@@ -15,6 +15,7 @@ export default function Settings({ settings, onUpdate }: Props) {
   const [maxAge, setMaxAge] = useState<number | null>(settings.maxAgeMinutes)
   const [autoScroll, setAutoScroll] = useState(settings.autoScroll)
   const [pollingIntervalMs, setPollingIntervalMs] = useState(settings.pollingIntervalMs)
+  const [adaptiveSlowdown, setAdaptiveSlowdown] = useState(settings.adaptiveSlowdown)
   const [hasApiKey, setHasApiKey] = useState(settings.hasApiKey)
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [keyStatus, setKeyStatus] = useState<string | null>(null)
@@ -64,6 +65,12 @@ export default function Settings({ settings, onUpdate }: Props) {
     setPollingIntervalMs(val)
     await window.api.setPollingInterval(val)
     onUpdate({ pollingIntervalMs: val })
+  }
+
+  async function handleAdaptiveSlowdown(val: boolean) {
+    setAdaptiveSlowdown(val)
+    await window.api.setAdaptiveSlowdown(val)
+    onUpdate({ adaptiveSlowdown: val })
   }
 
   async function handleMaxAge(val: number | null) {
@@ -174,6 +181,20 @@ export default function Settings({ settings, onUpdate }: Props) {
                 </button>
               )
             })}
+          </div>
+        </div>
+        <div className="settings-row">
+          <label className="settings-label">Adaptive slowdown</label>
+          <div className="flex gap-1">
+            {([true, false] as boolean[]).map((opt) => (
+              <button
+                key={String(opt)}
+                className={`age-btn ${adaptiveSlowdown === opt ? 'age-btn--active' : ''}`}
+                onClick={() => handleAdaptiveSlowdown(opt)}
+              >
+                {opt ? 'On' : 'Off'}
+              </button>
+            ))}
           </div>
         </div>
         <div className="settings-row">

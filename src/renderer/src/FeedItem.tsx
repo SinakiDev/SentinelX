@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { FeedItem as FeedItemType } from './types'
 
 interface Props {
@@ -34,11 +35,23 @@ function highlightKeywords(text: string, keywords: string[]): React.ReactNode {
 }
 
 export default function FeedItem({ item, keywords, onRemove }: Props) {
+  const [translated, setTranslated] = useState<string | null>(null)
+  const [translating, setTranslating] = useState(false)
+
   const hasKeyword = keywords.length > 0 &&
     keywords.some((k) => item.text.toLowerCase().includes(k.toLowerCase()))
 
   function handleClick() {
     if (item.url) window.api.openExternal(item.url)
+  }
+
+  async function handleTranslate(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (translated) { setTranslated(null); return }
+    setTranslating(true)
+    const result = await window.api.translateText(item.text)
+    setTranslated(result || '(translation failed)')
+    setTranslating(false)
   }
 
   const photos = item.photos ?? []
@@ -73,6 +86,18 @@ export default function FeedItem({ item, keywords, onRemove }: Props) {
       </div>
 
       <div className="feed-item__text">{highlightKeywords(item.text, keywords)}</div>
+
+      {translated && (
+        <div className="feed-item__translated">{translated}</div>
+      )}
+
+      <button
+        className="feed-item__translate-btn"
+        onClick={handleTranslate}
+        disabled={translating}
+      >
+        {translating ? '...' : translated ? 'Hide translation' : 'Translate'}
+      </button>
 
       {photos.length > 0 && (
         <img

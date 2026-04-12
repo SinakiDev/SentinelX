@@ -11,6 +11,11 @@ contextBridge.exposeInMainWorld('api', {
   setAutoScroll: (val: boolean) => ipcRenderer.invoke('settings:setAutoScroll', val),
   setPollingInterval: (val: number) => ipcRenderer.invoke('settings:setPollingInterval', val),
 
+  setAdaptiveSlowdown: (val: boolean) => ipcRenderer.invoke('settings:setAdaptiveSlowdown', val),
+
+  // Translation
+  translateText: (text: string, targetLang?: string) => ipcRenderer.invoke('translate:text', text, targetLang),
+
   // Accounts
   addAccount: (handle: string) => ipcRenderer.invoke('accounts:add', handle),
   removeAccount: (handle: string) => ipcRenderer.invoke('accounts:remove', handle),
