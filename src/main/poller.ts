@@ -96,11 +96,10 @@ async function pollAll(): Promise<void> {
   const windowMin = Math.round((now.getTime() - since.getTime()) / 60_000)
 
   const fromParts = config.accounts.map(h => `from:${h}`).join(' OR ')
-  const query = `${fromParts} since:${toQueryDate(since)} include:nativeretweets`
+  const query = `${fromParts} since:${toQueryDate(since)}`
 
   const slow = consecutiveEmptyPolls >= emptyThreshold(config.intervalMs)
   log('INFO', `Polling ${config.accounts.length} accounts (window: ${windowMin}m${slow ? ', slow mode' : ''})`)
-  log('DEBUG', `Query: ${query}`)
 
   const allTweets: ApiTweet[] = []
   let cursor: string | undefined
@@ -134,10 +133,7 @@ async function pollAll(): Promise<void> {
       return
     }
 
-    const raw = await res.text()
-    log('DEBUG', `Raw response (first 300): ${raw.slice(0, 300)}`)
-    let data: { tweets?: ApiTweet[]; has_next_page?: boolean; next_cursor?: string }
-    try { data = JSON.parse(raw) } catch { log('ERROR', 'Failed to parse response JSON'); return }
+    const data = await res.json() as { tweets?: ApiTweet[]; has_next_page?: boolean; next_cursor?: string }
     const page = data.tweets ?? []
     allTweets.push(...page)
     pages++
