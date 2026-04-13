@@ -4,6 +4,7 @@ import { log } from './logger'
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 let lastCheckTime: Date | null = null
+let lastTweetId: string | null = null
 let paused = false
 let consecutiveEmptyPolls = 0
 let adaptiveSlowdownEnabled = true
@@ -96,7 +97,9 @@ async function pollAll(): Promise<void> {
   const windowMin = Math.round((now.getTime() - since.getTime()) / 60_000)
 
   const fromParts = config.accounts.map(h => `from:${h}`).join(' OR ')
-  const query = `${fromParts} since:${toQueryDate(since)}`
+  const query = lastTweetId
+    ? `${fromParts} since_id:${lastTweetId}`
+    : `${fromParts} since:${toQueryDate(since)}`
 
   const slow = consecutiveEmptyPolls >= emptyThreshold(config.intervalMs)
   log('INFO', `Polling ${config.accounts.length} accounts (window: ${windowMin}m${slow ? ', slow mode' : ''})`)
@@ -148,6 +151,10 @@ async function pollAll(): Promise<void> {
 
   if (pages >= MAX_PAGES) log('WARN', `Pagination capped at ${MAX_PAGES} pages`)
 
+  if (allTweets.length > 0) {
+    lastTweetId = allTweets[0].id // API returns newest first
+  }
+
   lastCheckTime = now
   config.onPollComplete?.(now)
 
@@ -172,6 +179,7 @@ export async function _pollForTesting(): Promise<void> {
 
 export function _resetStateForTesting(): void {
   lastCheckTime = null
+  lastTweetId = null
   consecutiveEmptyPolls = 0
   paused = false
   config = null
@@ -214,6 +222,7 @@ export function startPolling(cfg: PollConfig): void {
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
   paused = false
   consecutiveEmptyPolls = 0
+  lastTweetId = null
   lastCheckTime = cfg.initialSince ?? null
   // Layer 2 of 2: enforce minimum regardless of what the caller passes.
   config = { ...cfg, intervalMs: Math.max(MIN_INTERVAL_MS, cfg.intervalMs) }
