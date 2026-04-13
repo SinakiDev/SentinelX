@@ -1,4 +1,4 @@
-import { insertTweet, TweetRow } from './db'
+import { insertTweet, TweetRow, getLastTweetId, setLastTweetId } from './db'
 import { log } from './logger'
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -94,15 +94,15 @@ async function pollAll(): Promise<void> {
   const now = new Date()
   const sinceBase = lastCheckTime ?? new Date(Date.now() - 60 * 60 * 1000)
   const since = new Date(Math.max(0, sinceBase.getTime() - POLL_OVERLAP_MS))
-  const windowMin = Math.round((now.getTime() - since.getTime()) / 60_000)
 
   const fromParts = config.accounts.map(h => `from:${h}`).join(' OR ')
   const query = lastTweetId
-    ? `${fromParts} since_id:${lastTweetId}`
-    : `${fromParts} since:${toQueryDate(since)}`
+    ? `(${fromParts}) since_id:${lastTweetId}`
+    : `(${fromParts}) since:${toQueryDate(since)}`
 
   const slow = consecutiveEmptyPolls >= emptyThreshold(config.intervalMs)
-  log('INFO', `Polling ${config.accounts.length} accounts (window: ${windowMin}m${slow ? ', slow mode' : ''})`)
+  const queryMode = lastTweetId ? `since_id:${lastTweetId}` : `since:${toQueryDate(since)}`
+  log('INFO', `Polling ${config.accounts.length} accounts (${queryMode}${slow ? ', slow mode' : ''})`)
 
   const allTweets: ApiTweet[] = []
   let cursor: string | undefined
@@ -153,6 +153,7 @@ async function pollAll(): Promise<void> {
 
   if (allTweets.length > 0) {
     lastTweetId = allTweets[0].id // API returns newest first
+    setLastTweetId(lastTweetId)
   }
 
   lastCheckTime = now
@@ -222,7 +223,7 @@ export function startPolling(cfg: PollConfig): void {
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
   paused = false
   consecutiveEmptyPolls = 0
-  lastTweetId = null
+  lastTweetId = getLastTweetId()
   lastCheckTime = cfg.initialSince ?? null
   // Layer 2 of 2: enforce minimum regardless of what the caller passes.
   config = { ...cfg, intervalMs: Math.max(MIN_INTERVAL_MS, cfg.intervalMs) }

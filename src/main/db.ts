@@ -19,6 +19,7 @@ export interface TweetRow {
 
 interface TweetStore {
   tweets: TweetRow[]
+  lastTweetId: string | null
 }
 
 let _store: Store<TweetStore> | null = null
@@ -27,7 +28,7 @@ function getStore(): Store<TweetStore> {
   if (!_store) {
     _store = new Store<TweetStore>({
       name: 'tweet-cache',
-      defaults: { tweets: [] }
+      defaults: { tweets: [], lastTweetId: null }
     })
   }
   return _store
@@ -83,6 +84,14 @@ export function flushTweetCache(): void {
     _flushTimer = null
   }
   if (_cache) getStore().set('tweets', _cache)
+}
+
+export function getLastTweetId(): string | null {
+  return getStore().get('lastTweetId') ?? null
+}
+
+export function setLastTweetId(id: string): void {
+  getStore().set('lastTweetId', id)
 }
 
 // Reset in-memory state — only used in unit tests
