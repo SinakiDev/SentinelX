@@ -78,13 +78,20 @@ describe('query construction', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1)
   })
 
-  it('includes since and until in the query', async () => {
-    mockFetch.mockResolvedValueOnce(makeOkResponse())
+  it('uses since: on first poll, since_id: on subsequent polls', async () => {
+    const nowSec = Math.floor(Date.now() / 1000)
+    mockFetch.mockResolvedValueOnce(makeOkResponse([makeTweet('100', nowSec - 30)]))
     await setup()
     await _pollForTesting()
-    const url: string = mockFetch.mock.calls[0][0]
-    expect(url).toContain('since%3A')
-    expect(url).toContain('until%3A')
+    const firstUrl: string = mockFetch.mock.calls[0][0]
+    expect(firstUrl).toContain('since%3A')
+    expect(firstUrl).not.toContain('since_id%3A')
+
+    mockFetch.mockResolvedValueOnce(makeOkResponse())
+    await _pollForTesting()
+    const secondUrl: string = mockFetch.mock.calls[1][0]
+    expect(secondUrl).toContain('since_id%3A100')
+    expect(secondUrl).not.toContain('since%3A')
   })
 })
 
@@ -134,34 +141,18 @@ describe('error handling', () => {
 // ─── Cursor advancement ───────────────────────────────────────────────────
 
 describe('cursor advancement', () => {
-  it('uses a small overlap so delayed indexing does not miss tweets', async () => {
-    mockFetch.mockResolvedValue(makeOkResponse())
+  it('uses since_id from highest tweet ID to avoid duplicates', async () => {
+    const nowSec = Math.floor(Date.now() / 1000)
+    mockFetch.mockResolvedValueOnce(makeOkResponse([makeTweet('200', nowSec - 10), makeTweet('150', nowSec - 60)]))
     await setup()
-
     await _pollForTesting()
-    const firstUrl: string = mockFetch.mock.calls[0][0]
+
+    mockFetch.mockResolvedValueOnce(makeOkResponse())
     await _pollForTesting()
     const secondUrl: string = mockFetch.mock.calls[1][0]
 
-    const getParam = (url: string, key: string) =>
-      new URLSearchParams(new URL(url).search).get(key) ?? ''
-
-    const parseQueryDate = (s: string): number => {
-      const iso = s.replace('_UTC', 'Z').replace('_', 'T')
-      return new Date(iso).getTime()
-    }
-
-    const firstUntil = getParam(firstUrl, 'query').match(/until:(\S+)/)?.[1]
-    const secondSince = getParam(secondUrl, 'query').match(/since:(\S+)/)?.[1]
-    expect(firstUntil).toBeTruthy()
-    expect(secondSince).toBeTruthy()
-
-    const firstUntilMs = parseQueryDate(firstUntil!)
-    const secondSinceMs = parseQueryDate(secondSince!)
-
-    // Second poll should overlap slightly before the first poll's until time.
-    expect(secondSinceMs).toBeLessThanOrEqual(firstUntilMs)
-    expect(secondSinceMs).toBeGreaterThanOrEqual(firstUntilMs - 2 * 60_000)
+    // Should use the newest tweet ID (200) from the first poll
+    expect(secondUrl).toContain('since_id%3A200')
   })
 })
 
