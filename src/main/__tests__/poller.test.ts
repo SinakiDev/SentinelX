@@ -11,7 +11,9 @@ vi.mock('../logger', () => ({ log: vi.fn() }))
 
 vi.mock('../db', () => ({
   insertTweet: vi.fn(() => true),
-  getRecentTweets: vi.fn(() => [])
+  getRecentTweets: vi.fn(() => []),
+  getLastTweetId: vi.fn(() => null),
+  setLastTweetId: vi.fn()
 }))
 
 import {
