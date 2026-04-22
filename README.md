@@ -33,7 +33,7 @@ Go to [Releases](https://github.com/SinakiDev/SentinelX/releases) and download t
 ## Getting Started
 
 1. Extract the zip and run `SentinelX.exe`
-2. Get a free API key from [twitterapi.io/dashboard](https://twitterapi.io/dashboard) (The free api gives 10.000 credits which is plenty depending how long how many accounts you monitor)
+2. Get a free API key from [twitterapi.io/dashboard](https://twitterapi.io/dashboard) (The free api gives 10.000 credits which is plenty depending how long and how many accounts you monitor)
 3. Open Settings - paste your key - click **Save Key**
 4. Add X handles to monitor (e.g. `osint613`, `sentdefender`)
 5. Close Settings - polling starts immediately
