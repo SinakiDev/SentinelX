@@ -3,6 +3,9 @@
 A lightweight Windows desktop overlay for monitoring X (Twitter) accounts in real time. Built for tracking fast-moving news - geopolitical events, conflict coverage, breaking situations - without leaving your workflow.
 
 ---
+https://github.com/user-attachments/assets/44c1b8ff-01ce-433b-8b01-f7e6a44b87e6
+
+
 
 ## Features
 
