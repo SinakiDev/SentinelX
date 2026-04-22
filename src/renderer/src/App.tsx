@@ -123,6 +123,16 @@ export default function App() {
         </div>
       )}
 
+      {/* Stats bar */}
+      {!showSettings && visibleItems.length > 0 && (
+        <div className="stats-bar flex-shrink-0">
+          <span className="stats-bar__count">{visibleItems.length}</span> tweets
+          {settings?.accounts && settings.accounts.length > 0 && (
+            <span className="text-gray-600"> from {settings.accounts.length} account{settings.accounts.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col flex-1 min-h-0">
         {showSettings && settings ? (
           <Settings settings={settings} onUpdate={handleSettingsUpdate} />

@@ -245,7 +245,10 @@ export default function Settings({ settings, onUpdate }: Props) {
         <h2 className="settings-heading">twitterapi.io Key</h2>
         {hasApiKey ? (
           <div>
-            <p className="text-xs text-green-400 mb-2">● API key saved — polling active</p>
+            <p className="text-xs text-green-400 mb-2 flex items-center gap-1.5">
+              <span className="live-dot" style={{ width: 6, height: 6 }} />
+              API key saved — polling active
+            </p>
             <button className="settings-btn settings-btn--danger" onClick={handleClearKey}>
               Remove Key
             </button>

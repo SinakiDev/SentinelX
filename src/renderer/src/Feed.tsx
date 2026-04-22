@@ -126,11 +126,11 @@ export default function Feed({ items, keywords, scrollSpeed, autoScroll = true, 
       onWheel={looping ? handleWheel : undefined}
     >
       {paused && looping && <div className="feed-paused-badge">PAUSED</div>}
-      <div ref={innerRef}>
+      <div ref={innerRef} className="py-1">
         {isEmpty ? (
           <div className="feed-empty">
-            <p>No tweets yet.</p>
-            <p className="text-xs mt-1 text-gray-500">Add accounts &amp; log in via ⚙ Settings.</p>
+            <p className="text-base mb-1">No tweets yet</p>
+            <p className="text-xs text-gray-500">Add accounts and configure your API key in Settings.</p>
           </div>
         ) : (
           <>
