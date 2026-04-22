@@ -13,6 +13,7 @@ const MIN_INTERVAL_MS = 60_000  // hard floor — cannot be bypassed
 const FETCH_TIMEOUT_MS = 30_000 // abort hung requests after 30s
 const MAX_PAGES = 10            // credit safety cap — stop paginating after 10 pages
 const POLL_OVERLAP_MS = 2 * 60_000 // overlap window to tolerate API indexing delays
+const PAGE_DELAY_MS = 5_100    // free-tier rate limit: 1 req/5s — delay between pages
 // Slow interval = 5× the configured interval, capped at 30 min.
 // This keeps the slowdown proportional: 1min→5min, 3.5min→17.5min, 5min→25min.
 // Short intervals (≤2min) require 4 consecutive empty polls before slowing down;
@@ -109,6 +110,8 @@ async function pollAll(): Promise<void> {
   let pages = 0
 
   while (pages < MAX_PAGES) {
+    if (pages > 0) await new Promise(r => setTimeout(r, PAGE_DELAY_MS))
+
     const urlParts = [`query=${encodeURIComponent(query)}`, `queryType=Latest`]
     if (cursor) urlParts.push(`cursor=${encodeURIComponent(cursor)}`)
     const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?${urlParts.join('&')}`
@@ -126,6 +129,11 @@ async function pollAll(): Promise<void> {
       return
     } finally {
       clearTimeout(timeoutId)
+    }
+
+    if (res.status === 429) {
+      log('WARN', 'Rate limited (429) — stopping pagination early, will resume next poll')
+      break
     }
 
     if (!res.ok) {
