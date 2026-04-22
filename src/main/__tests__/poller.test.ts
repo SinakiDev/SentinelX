@@ -118,11 +118,11 @@ describe('tweet emission', () => {
 // ─── Error handling ───────────────────────────────────────────────────────
 
 describe('error handling', () => {
-  it('calls onError for HTTP 429', async () => {
+  it('does not call onError for HTTP 429 — stops pagination gracefully', async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 429, text: async () => '' })
     const { onError } = await setup()
     await _pollForTesting()
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('429'))
+    expect(onError).not.toHaveBeenCalled()
   })
 
   it('calls onError for HTTP 401', async () => {
@@ -162,6 +162,7 @@ describe('cursor advancement', () => {
 
 describe('pagination', () => {
   it('follows has_next_page and fetches all pages', async () => {
+    vi.useFakeTimers()
     const nowSec = Math.floor(Date.now() / 1000)
     mockFetch
       .mockResolvedValueOnce({
@@ -174,7 +175,11 @@ describe('pagination', () => {
       })
 
     const { onNewTweet } = await setup()
-    await _pollForTesting()
+    const pollPromise = _pollForTesting()
+    await vi.runAllTimersAsync()
+    await pollPromise
+    vi.useRealTimers()
+
     expect(mockFetch).toHaveBeenCalledTimes(2)
     expect(onNewTweet).toHaveBeenCalledTimes(2)
   })
