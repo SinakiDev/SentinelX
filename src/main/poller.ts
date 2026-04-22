@@ -231,7 +231,7 @@ export function startPolling(cfg: PollConfig): void {
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
   paused = false
   consecutiveEmptyPolls = 0
-  lastTweetId = getLastTweetId()
+  lastTweetId = cfg.initialSince ? null : getLastTweetId()  // fresh start if initialSince given
   lastCheckTime = cfg.initialSince ?? null
   // Layer 2 of 2: enforce minimum regardless of what the caller passes.
   config = { ...cfg, intervalMs: Math.max(MIN_INTERVAL_MS, cfg.intervalMs) }

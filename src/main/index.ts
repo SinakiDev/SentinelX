@@ -204,8 +204,8 @@ app.whenReady().then(async () => {
         accounts: s.get('accounts'),
         intervalMs: s.get('pollingIntervalMs'),
         apiKey,
-        // Backfill a short window on startup so fresh installs don't miss recent tweets.
-        initialSince: new Date(Date.now() - 5 * 60_000),
+        // Backfill last 30 minutes on startup.
+        initialSince: new Date(Date.now() - 30 * 60_000),
         onNewTweet: (tweet) => win?.webContents.send('feed:item', tweet),
         onError: (msg) => win?.webContents.send('feed:error', msg),
         onPollComplete: (t) => getStore().set('lastPollTime', t.toISOString())
